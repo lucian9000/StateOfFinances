@@ -168,14 +168,15 @@ yet merged to `main`.
 ## What's next (roadmap)
 
 - Merge `feature/dashboard-frontend` to `main` once reviewed.
-- Fill in the real `RESEND_API_KEY` (currently a placeholder in
-  `~/n8n-automation/.env` as `BUDGET_WEB_RESEND_API_KEY`) — magic-link sign-in won't
-  actually deliver email until that's a real key.
 - Candidate backlog: CRUD (edit/recategorize transactions, manage goals from the UI
   instead of psql), recategorize-by-reply for uncategorized transactions, monthly
   close-out report, savings/slush tracking over time, export.
 
 ## Patch notes
+
+### 2026-07-17 — v0.4.1
+- Real `RESEND_API_KEY` dropped in (was a placeholder in v0.4) — magic-link sign-in is
+  actually live now, not just wired up.
 
 ### 2026-07-17 — v0.4 "the dashboard"
 - Phase 2 web dashboard built: Next.js 14 App Router + TS + Tailwind, Auth.js v5
