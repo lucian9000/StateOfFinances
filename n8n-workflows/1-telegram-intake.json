@@ -33,7 +33,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const trig = $('Telegram Trigger').item.json;\nconst msg = trig.message || {};\nconst pendingItems = $input.all();\nconst pending = (pendingItems.length && pendingItems[0].json && pendingItems[0].json.id) ? pendingItems[0].json : null;\n\nconst text = (msg.text || '').trim();\nconst hasPhoto = Array.isArray(msg.photo) && msg.photo.length > 0;\nconst numMatch = text.replace(/^[Rr]\\s*/, '').match(/^\\d+(\\.\\d+)?$/);\n\nlet route = 'text';\nif (pending && numMatch) {\n  route = 'income';\n} else if (hasPhoto) {\n  route = 'photo';\n}\n\nreturn [{\n  json: {\n    route,\n    chatId: msg.chat.id,\n    messageId: msg.message_id,\n    text,\n    pendingIncomeId: pending ? pending.id : null,\n    pendingIncomeType: pending ? pending.type : null,\n    incomeAmount: numMatch ? parseFloat(numMatch[0]) : null,\n    photoFileId: hasPhoto ? msg.photo[msg.photo.length - 1].file_id : null,\n  }\n}];"
+        "jsCode": "const trig = $('Telegram Trigger').item.json;\nconst msg = trig.message || {};\nconst pendingItems = $input.all();\nconst pending = (pendingItems.length && pendingItems[0].json && pendingItems[0].json.id) ? pendingItems[0].json : null;\n\nconst text = (msg.text || '').trim();\nconst hasPhoto = Array.isArray(msg.photo) && msg.photo.length > 0;\nconst numMatch = text.replace(/^[Rr]\\s*/, '').match(/^\\d+(\\.\\d+)?$/);\nconst anyNumber = text.match(/\\d+(\\.\\d+)?/);\n\n// chat is the default: anything that isn't an income reply, a photo,\n// or a text containing an amount goes to the OpenClaw agent for a\n// conversational reply instead of being force-parsed as a transaction.\nlet route = 'chat';\nif (pending && numMatch) {\n  route = 'income';\n} else if (hasPhoto) {\n  route = 'photo';\n} else if (anyNumber) {\n  route = 'text';\n}\n\nreturn [{\n  json: {\n    route,\n    chatId: msg.chat.id,\n    messageId: msg.message_id,\n    text,\n    pendingIncomeId: pending ? pending.id : null,\n    pendingIncomeType: pending ? pending.type : null,\n    incomeAmount: numMatch ? parseFloat(numMatch[0]) : null,\n    photoFileId: hasPhoto ? msg.photo[msg.photo.length - 1].file_id : null,\n  }\n}];"
       },
       "id": "ee91187c-5191-4d5b-9fbc-06a33f71e59c",
       "name": "Route Message",
@@ -86,7 +86,7 @@
         "operation": "sendMessage",
         "chatId": "={{ $('Route Message').item.json.chatId }}",
         "text": "=Got it — R{{ $('Route Message').item.json.incomeAmount }} logged for your {{ $('Route Message').item.json.pendingIncomeType }} pay. Recalculating your weekly budget now.",
-        "additionalFields": {}
+        "additionalFields": { "appendAttribution": false }
       },
       "id": "d475c2f0-7aeb-44c6-9c74-ad289658bcc8",
       "name": "Confirm Income Reply",
@@ -254,7 +254,7 @@
         "operation": "sendMessage",
         "chatId": "={{ $('Build Classify Input (Photo)').item.json.chatId }}",
         "text": "=Logged R{{ $('Build Classify Input (Photo)').item.json.amount }} as uncategorized for now — closest guess: {{ $json.category_name || $json.suggested_category_name || 'none' }}. Reply with the right category and I'll remember it for next time.",
-        "additionalFields": {}
+        "additionalFields": { "appendAttribution": false }
       },
       "id": "8d47ef31-29eb-411b-951e-1ddeea0f4b50",
       "name": "Ask Category (Photo Unsure)",
@@ -288,7 +288,7 @@
         "operation": "sendMessage",
         "chatId": "={{ $('Build Classify Input (Photo)').item.json.chatId }}",
         "text": "=Logged R{{ $('Build Classify Input (Photo)').item.json.amount }} under {{ $json.category_name }}.",
-        "additionalFields": {}
+        "additionalFields": { "appendAttribution": false }
       },
       "id": "2e375aae-dccf-4fa1-8ef1-4409332cf078",
       "name": "Confirm Logged (Photo Confident)",
@@ -374,7 +374,7 @@
         "operation": "sendMessage",
         "chatId": "={{ $('Build Classify Input (Text)').item.json.chatId }}",
         "text": "=Logged R{{ $('Build Classify Input (Text)').item.json.amount }} as uncategorized for now — closest guess: {{ $json.category_name || $json.suggested_category_name || 'none' }}. Reply with the right category and I'll remember it for next time.",
-        "additionalFields": {}
+        "additionalFields": { "appendAttribution": false }
       },
       "id": "c20f557d-42a4-4641-a9b9-baaf424a2830",
       "name": "Ask Category (Text Unsure)",
@@ -408,13 +408,111 @@
         "operation": "sendMessage",
         "chatId": "={{ $('Build Classify Input (Text)').item.json.chatId }}",
         "text": "=Logged R{{ $('Build Classify Input (Text)').item.json.amount }} under {{ $json.category_name }}.",
-        "additionalFields": {}
+        "additionalFields": { "appendAttribution": false }
       },
       "id": "b0a32429-d1b3-421b-a99a-421749e1045a",
       "name": "Confirm Logged (Text Confident)",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [600, 760],
+      "credentials": {
+        "telegramApi": { "id": "6wsBoDN4TWeIFvgr", "name": "Budget Telegram Bot" }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [
+            {
+              "id": "e7984ae7-e30a-4d46-bb9e-ef073906fc45",
+              "leftValue": "={{ $json.route }}",
+              "rightValue": "chat",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "331ea595-b49c-4de9-9593-df61bb77eddf",
+      "name": "Is Chat?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-280, 880]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://172.18.0.1:8790/chat",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: $json.text, chat_id: String($json.chatId) }) }}",
+        "options": { "timeout": 240000 }
+      },
+      "id": "2b4435b6-19eb-42a2-8b63-53b5258c0a6d",
+      "name": "Bridge Chat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-60, 940],
+      "credentials": {
+        "httpHeaderAuth": { "id": "Eg83ctL4osyXjKdT", "name": "Budget Bridge Token" }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $('Route Message').item.json.chatId }}",
+        "text": "={{ $json.reply }}",
+        "additionalFields": { "appendAttribution": false }
+      },
+      "id": "80384987-8612-4e5c-b690-cb7f0eaa5d1d",
+      "name": "Send Chat Reply",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [160, 940],
+      "credentials": {
+        "telegramApi": { "id": "6wsBoDN4TWeIFvgr", "name": "Budget Telegram Bot" }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "conditions": [
+            {
+              "id": "51973134-695b-4378-9fd2-926cd154fcf3",
+              "leftValue": "={{ $json.amount }}",
+              "rightValue": 0,
+              "operator": { "type": "number", "operation": "gt" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "8ba17bfb-0504-4f49-9da7-0427db1a895d",
+      "name": "Has Amount? (Photo)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [490, 400]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $('Route Message').item.json.chatId }}",
+        "text": "Couldn't read an amount off that slip. Type it instead, e.g. \"checkers 450\".",
+        "additionalFields": { "appendAttribution": false }
+      },
+      "id": "d722cead-033e-49f3-9e98-119d433f392f",
+      "name": "Ask Amount (Photo)",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [710, 240],
       "credentials": {
         "telegramApi": { "id": "6wsBoDN4TWeIFvgr", "name": "Budget Telegram Bot" }
       }
@@ -435,13 +533,26 @@
     "Has Photo?": {
       "main": [
         [{ "node": "Download Receipt File", "type": "main", "index": 0 }],
+        [{ "node": "Is Chat?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Is Chat?": {
+      "main": [
+        [{ "node": "Bridge Chat", "type": "main", "index": 0 }],
         [{ "node": "Build Classify Input (Text)", "type": "main", "index": 0 }]
       ]
     },
+    "Bridge Chat": { "main": [[{ "node": "Send Chat Reply", "type": "main", "index": 0 }]] },
     "Download Receipt File": { "main": [[{ "node": "Encode Base64", "type": "main", "index": 0 }]] },
     "Encode Base64": { "main": [[{ "node": "Bridge OCR", "type": "main", "index": 0 }]] },
     "Bridge OCR": { "main": [[{ "node": "Build Classify Input (Photo)", "type": "main", "index": 0 }]] },
-    "Build Classify Input (Photo)": { "main": [[{ "node": "Bridge Classify (Photo)", "type": "main", "index": 0 }]] },
+    "Build Classify Input (Photo)": { "main": [[{ "node": "Has Amount? (Photo)", "type": "main", "index": 0 }]] },
+    "Has Amount? (Photo)": {
+      "main": [
+        [{ "node": "Bridge Classify (Photo)", "type": "main", "index": 0 }],
+        [{ "node": "Ask Amount (Photo)", "type": "main", "index": 0 }]
+      ]
+    },
     "Bridge Classify (Photo)": { "main": [[{ "node": "Needs Confirmation? (Photo)", "type": "main", "index": 0 }]] },
     "Needs Confirmation? (Photo)": {
       "main": [

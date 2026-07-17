@@ -58,7 +58,7 @@
         "operation": "sendMessage",
         "chatId": "={{ $env.BUDGET_OWNER_CHAT_ID }}",
         "text": "={{ $json.message }}",
-        "additionalFields": {}
+        "additionalFields": { "appendAttribution": false }
       },
       "id": "3fbd8699-443c-4e51-b33b-c1d2dd7bc752",
       "name": "Send Weekend Summary",

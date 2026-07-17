@@ -72,7 +72,7 @@
         "operation": "sendMessage",
         "chatId": "={{ $env.BUDGET_OWNER_CHAT_ID }}",
         "text": "={{ $json.message }}",
-        "additionalFields": {}
+        "additionalFields": { "appendAttribution": false }
       },
       "id": "d0f6e526-fd7c-40a3-873c-20497051627f",
       "name": "Send Daily Summary",

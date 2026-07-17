@@ -103,6 +103,34 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === 'POST' && req.url === '/chat') {
+      const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+      if (!body.text || !body.chat_id) { send(res, 400, { error: 'missing "text" or "chat_id"' }); return; }
+      const reply = await new Promise((resolve, reject) => {
+        execFile('openclaw', [
+          '--log-level', 'silent',
+          'agent',
+          '--agent', 'main',
+          '--session-key', `agent:main:budget-telegram-${body.chat_id}`,
+          '--message', String(body.text),
+          '--json',
+        ], { timeout: 240000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+          if (err) { reject(new Error(stderr || err.message)); return; }
+          try {
+            const parsed = JSON.parse(stdout);
+            const texts = (parsed.result?.payloads || [])
+              .map((p) => p.text)
+              .filter(Boolean);
+            resolve(texts.join('\n\n') || '(no reply)');
+          } catch (e) {
+            reject(new Error(`agent produced non-JSON output: ${stdout.slice(0, 300)}`));
+          }
+        });
+      });
+      send(res, 200, { reply });
+      return;
+    }
+
     if (req.method === 'POST' && req.url === '/confirm-category') {
       const body = (await readBody(req)).toString('utf8') || '{}';
       const result = await runScript('confirm_category.js', body);

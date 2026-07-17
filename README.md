@@ -1,153 +1,169 @@
-# StateOfFinances — Phase 1 (Backend)
+# StateOfFinances
 
-## What's where
+Personal budget tracker, driven entirely through Telegram. Phase 1 (backend) is live.
+
+Income lands in USD twice a month (variable ~25th, fixed $550 on the 7th) and gets
+manually confirmed in ZAR. Spending is captured by texting the bot or sending it a
+receipt photo — no bank integration, everything is manual/photo entry by design.
+
+## How it works
 
 ```
-budget-tracker/
-  migrations/001_init.sql              - schema + seed categories
-  bridge/server.js                     - n8n <-> OpenClaw bridge (runs as a systemd --user service)
-  bridge/.env.example                  - template; real .env lives only on the server, gitignored
-  n8n-workflows/*.json                 - the 5 workflows (secret-free: credential IDs only)
-  openclaw-skill/budget-capture/       - mirror of the live OpenClaw skill (see below)
-  infra/budget-bridge.service          - the systemd unit, for reference/redeploy
-  infra/docker-compose.budget-db.snippet.yml  - the service block added to n8n's compose file
-  README.md                            - this file
+                        ┌────────────────────────────────────────────────┐
+  Telegram bot          │ n8n (Docker, port 5678)                        │
+  (dedicated token) ───▶│  Telegram Intake ──┬─ income reply → income    │
+   via Tailscale Funnel │                    ├─ photo → OCR → classify   │
+                        │                    ├─ text+amount → classify   │
+                        │                    └─ anything else → chat     │
+                        │  Income Confirmation (7th/25th prompt)         │
+                        │  Weekly Budget Calc (Mon + on income confirm)  │
+                        │  Daily Cron (07:00 summary)                    │
+                        │  Weekend Check-in (Sat 08:00)                  │
+                        └───────────┬────────────────────┬───────────────┘
+                                    │ SQL                │ HTTP + token
+                             ┌──────▼──────┐   ┌─────────▼──────────────┐
+                             │ Postgres    │   │ budget-bridge (host,   │
+                             │ budget-db   │   │ 172.18.0.1:8790)       │
+                             │ :5434       │   │  /ocr /classify /chat  │
+                             └─────────────┘   │  /confirm-category     │
+                                               └─────────┬──────────────┘
+                                                         │ CLI
+                                               ┌─────────▼──────────────┐
+                                               │ OpenClaw (host)        │
+                                               │  budget-capture skill  │
+                                               │  + main agent (chat)   │
+                                               │  OpenAI via OAuth      │
+                                               └────────────────────────┘
 ```
 
-This repo is a **mirror for redeployment**, not the live source of truth — the actually
-running skill lives at `~/.openclaw/workspace/skills/budget-capture/` on the server (with
-its own `.env` and `node_modules`, neither committed here). If you ever need to rebuild
-this from scratch, see "Redeploying from this repo" below.
+### Message routing (Telegram Intake)
 
-Postgres runs as a new `budget-db` container alongside the existing n8n/second-brain
-stack (`~/n8n-automation/docker-compose.yml` on the server) — nothing existing was
-touched, only added to (see `infra/docker-compose.budget-db.snippet.yml` for the exact
-block).
+Every message you send the bot goes through one router, in priority order:
 
-## How the pieces tie together
+1. **Income reply** — if there's a pending income row (no `confirmed_zar` yet) and your
+   message is just a number (e.g. `9500` or `R9500`), it's taken as the ZAR amount for
+   that payday, and the weekly budget recalc fires automatically.
+2. **Photo** — downloaded, OCR'd (amount/vendor/date), classified. If OCR can't find an
+   amount you're asked to type it instead. If classification isn't confident, it's
+   logged uncategorized and you're asked which category it belongs to.
+3. **Text containing an amount** (e.g. `petrol engen 250`) — treated as a transaction:
+   classified (keyword match first, LLM fallback), inserted, confirmed back to you.
+4. **Anything else** — routed to the OpenClaw **main agent** as normal chat. You can ask
+   questions, give instructions, or just talk; replies come back through the bot.
+   Conversation state is kept per chat (session key `agent:main:budget-telegram-<chatid>`).
 
-**Categories** are the budget's backbone. Each has a `type`:
-- `true_fixed` — Rent, Electricity, Debt, etc. Deducted off the top every month.
-- `recurring_variable` — Groceries, Petrol, Sigarettes. Regular but not a fixed amount.
-- `flexible` — anything else (created on the fly when you log something new).
+### Data model
 
-Each category carries `keyword_hints` (e.g. Groceries has `checkers`, `woolworths`, ...).
-Classification is keyword-first (`categories.keyword_hints`/`name` matched against the
-transaction text) and only falls back to a model call when nothing matches. A category
-has an `active` flag (added beyond the original spec) so you can retire one without
-losing its transaction history — the "≥15 active categories" hard rule in the skill
-reads off this flag.
+- **categories** — `true_fixed` (Rent, Electricity, Water, Internet, Debt, Minette,
+  Subscriptions), `recurring_variable` (Groceries, Petrol, Sigarettes), `flexible`
+  (created on demand). Each has `keyword_hints` used for classification; confirmed
+  matches append new hints so the system learns your vendors. An `active` flag lets you
+  retire categories without losing history. Hard cap: at 15 active categories the
+  classifier will never propose a new one, only the closest existing match.
+- **transactions** — the ledger. `category_id` is nullable: an unconfident
+  classification logs the spend as uncategorized with the suggested category in `note`.
+- **income** — one row per payday. Created *empty* by the Income Confirmation workflow
+  (7th fixed / 25th variable) as a "pending" marker; your numeric reply fills in
+  `confirmed_zar`.
+- **budgets** — one row per (month, week): income minus 10% savings, 5% slush, and the
+  `true_fixed` total, split across the weeks left in the month, each week carved into a
+  weekday pool and a 20% weekend pool.
 
-**Transactions** are the ledger — every logged spend, linked to a `category_id` (nullable:
-a transaction can land uncategorized if classification wasn't confident, with a note
-showing the suggested category so you can fix it later).
+### Scheduled workflows
 
-**Income** rows get created *empty* (`confirmed_zar IS NULL`) by the "Income
-Confirmation" workflow on the 7th/25th, as a marker that a confirmation is pending. Your
-next Telegram reply that's just a number gets picked up by "Telegram Intake" as the
-answer to *that* pending row, not as a new transaction. This is also why there's only
-ever one Telegram bot and one webhook — see "Why one bot, one webhook" below.
-
-**Budgets** are the output of "Weekly Budget Calc": for each remaining week in the
-month, `income_total`→ minus 10% savings, 5% slush, true_fixed total → split evenly
-across the weeks left → each week's slice split again into a weekday pool
-(`weekly_budget`) and a 20%-of-that weekend pool (`weekend_budget`), tracked separately.
-"Daily Cron" and "Weekend Check-in" both read against the current week's row
-(`week_number = CEIL(day of month / 7)`).
-
-## Re-running the weekly calc manually
-
-Either:
-- In n8n, open **Budget - Weekly Budget Calc** and hit "Execute Workflow" — it recomputes
-  off whatever's currently in `income`/`categories` and upserts the remaining weeks of
-  the month (safe to re-run any time, it's an upsert on `(month, week_number)`).
-- Or trigger it from the CLI without touching n8n's UI:
-  ```bash
-  curl -X POST http://localhost:5678/webhook-test/... # not wired — see note below
-  ```
-  There's no standalone webhook for this one by design (spec only asked for
-  trigger-on-income-confirm + weekly Monday schedule) — use n8n's manual "Execute
-  Workflow" button, or temporarily add a Webhook node if you want it callable from
-  outside n8n too.
-
-## Live status (as of 2026-07-17)
-
-All 5 workflows are imported, credentialed, and **active**. End to end:
-
-- **Bridge reachability**: fixed — `sudo ufw allow from 172.18.0.0/16 to any port 8790 proto tcp`
-  was applied, confirmed working from inside the n8n container.
-- **Public webhook**: n8n's `WEBHOOK_URL` (`~/n8n-automation/docker-compose.yml`) points at
-  a **Tailscale Funnel** (`https://mrrobot-server.tail15a3bc.ts.net/`), not a cloudflared
-  quick tunnel — this one doesn't rot on restart. Funnel was enabled with
-  `tailscale funnel --bg 5678` after a one-time tailnet-level enable + `tailscale set
-  --operator=$USER` (so future changes don't need sudo either). If this box ever gets
-  rebooted and the tailnet funnel config is somehow lost, re-run that one command — no
-  tailnet re-approval needed, that part persists.
-- **Telegram bot**: your dedicated bot (from BotFather) is wired in as the `Budget
-  Telegram Bot` credential; its webhook is registered against the Funnel URL.
-- **Credentials**: created via the n8n API — `Budget Postgres`, `Budget Telegram Bot`,
-  `Budget Bridge Token` — all three referenced correctly in the workflow JSON (real
-  credential IDs, not placeholders).
-- **`BUDGET_OWNER_CHAT_ID`**: set to your chat ID (`7257153261`) in the n8n compose env.
-
-Nothing left to configure — text or photo your bot to log a transaction. 7th/25th it'll
-ask for your ZAR amount; confirming that kicks off the weekly recalc automatically.
-Saturdays → weekend pool report. 07:00 daily → full summary.
-
-If you ever need to redo any of the credentials (e.g. bot token rotated), see
-`~/budget-tracker/bridge/.env` and `~/n8n-automation/.env` for the underlying secrets —
-they're not duplicated anywhere else.
-
-## Boot resilience (survives a power failure / reboot)
-
-Audited 2026-07-17 — everything needed was already correctly configured, nothing had to
-be changed:
-
-| Component | Mechanism | Status |
+| Workflow | When | What |
 |---|---|---|
-| `budget-db`, `n8n-router` containers | Docker `restart: unless-stopped` | ✓ |
-| Docker daemon itself | `systemctl is-enabled docker` | ✓ enabled |
-| `budget-bridge.service` | `systemctl --user enable` | ✓ enabled |
-| systemd user services survive reboot without login | `loginctl` linger for `mrrobot` | ✓ already `Linger=yes` |
-| `ufw` (bridge firewall rule) | `systemctl is-enabled ufw` | ✓ enabled, rule persists in `/etc/ufw` |
-| `tailscaled` + Funnel config | `systemctl is-enabled tailscaled` | ✓ enabled; Funnel/serve config is stored in tailscaled's own state and reasserts automatically when the daemon starts |
+| Income Confirmation | 08:00 on the 7th & 25th | Inserts pending income row, asks you what ZAR landed |
+| Weekly Budget Calc | Mondays 08:00 + when income is confirmed | (Re)computes remaining weeks' budgets, messages you the split |
+| Daily Cron | 07:00 daily | Week-to-date spend by category, weekday/weekend pools remaining |
+| Weekend Check-in | Saturdays 08:00 | Weekend pool spent/remaining |
 
-Nothing to do here unless one of those services is ever manually disabled. If Funnel
-ever stops responding after a reboot, `tailscale funnel status` first — if it shows
-nothing, re-run `tailscale funnel --bg 5678` (no tailnet re-approval needed, that part
-is permanent).
+All times Africa/Johannesburg.
+
+## Repo layout
+
+```
+migrations/001_init.sql              - schema + seed categories
+bridge/server.js                     - host HTTP shim: /ocr /classify /chat /confirm-category
+bridge/.env.example                  - template; real .env lives only on the server
+n8n-workflows/*.json                 - the 5 workflows (credential IDs only, no secrets)
+openclaw-skill/budget-capture/       - OCR + classification skill (mirror of the live copy)
+infra/budget-bridge.service          - systemd --user unit for the bridge
+infra/docker-compose.budget-db.snippet.yml - the compose block added for budget-db
+```
+
+This repo is a mirror for redeployment; the live skill runs from
+`~/.openclaw/workspace/skills/budget-capture/` on the server. Deploy key
+`~/.ssh/id_stateoffinances` pushes here.
+
+## Operations
+
+- **Re-run the weekly calc manually**: open *Budget - Weekly Budget Calc* in n8n and hit
+  "Execute Workflow". Safe to re-run anytime — it upserts on `(month, week_number)`.
+- **Retire a category**: `UPDATE categories SET active = false WHERE name = '...';`
+  (via `docker exec n8n-automation-budget-db-1 psql -U budget_app -d budget_tracker`).
+- **Check the bridge**: `systemctl --user status budget-bridge`, logs via
+  `journalctl --user -u budget-bridge`.
+- **Check webhook exposure**: `tailscale funnel status` — should show port 443 → 5678.
+  If empty after some catastrophe: `tailscale funnel --bg 5678`.
+- **Boot resilience** (audited 2026-07-17): docker + ufw + tailscaled enabled at boot;
+  containers `restart: unless-stopped`; `budget-bridge` is an enabled systemd --user
+  service with login-lingering on — everything comes back by itself after a power cut.
+
+## Secrets (never committed)
+
+`~/budget-tracker/bridge/.env` (bridge token), `~/n8n-automation/.env` (DB passwords),
+`~/.openclaw/workspace/skills/budget-capture/.env` (skill's DB access). The n8n
+credentials (`Budget Postgres`, `Budget Telegram Bot`, `Budget Bridge Token`) live in
+n8n's own encrypted store.
 
 ## Redeploying from this repo (fresh server)
 
-1. `psql`/`docker exec ... psql` the target Postgres with `migrations/001_init.sql`.
-2. Copy `openclaw-skill/budget-capture/` to `~/.openclaw/workspace/skills/budget-capture/`
-   on the target box, copy `.env.example` to `.env` and fill in real values, then
-   `npm install` inside it (needs `pg`).
-3. Copy `bridge/` next to it (e.g. `~/budget-tracker/bridge/`), same `.env.example` →
-   `.env` treatment, then install `infra/budget-bridge.service` under
-   `~/.config/systemd/user/` and `systemctl --user enable --now budget-bridge.service`
-   (make sure `loginctl enable-linger <user>` is set so it survives reboots without an
-   active login).
-4. Open the bridge port from the n8n container's docker bridge subnet only — see
-   `infra/docker-compose.budget-db.snippet.yml`'s comments for the exact `ufw` rule.
-5. Add the `budget-db` service from that same snippet file into the target n8n
-   `docker-compose.yml`, set `BUDGET_DB_PASSWORD` in its `.env`, `docker compose up -d`.
-6. Import `n8n-workflows/*.json` via `n8n import:workflow` (or the UI), recreate the 3
-   credentials (`Budget Postgres`, `Budget Telegram Bot`, `Budget Bridge Token`), set
-   `BUDGET_OWNER_CHAT_ID`, activate all 5.
-7. Point `WEBHOOK_URL` at a stable public HTTPS endpoint (a Tailscale Funnel, as used
-   here, or your own reverse proxy) — a cloudflared *quick* tunnel will NOT survive
-   restarts.
+1. Apply `migrations/001_init.sql` to a Postgres 16 database `budget_tracker`.
+2. Copy `openclaw-skill/budget-capture/` to `~/.openclaw/workspace/skills/`, create its
+   `.env` from the example, `npm install` inside it.
+3. Copy `bridge/` somewhere stable, create `.env` from the example, install
+   `infra/budget-bridge.service` under `~/.config/systemd/user/`, enable it, and make
+   sure `loginctl enable-linger <user>` is set.
+4. Allow the n8n container's subnet to reach the bridge port
+   (`sudo ufw allow from <docker-subnet> to any port 8790 proto tcp`).
+5. Add the `budget-db` block from `infra/docker-compose.budget-db.snippet.yml` to the
+   n8n compose stack; set `BUDGET_DB_PASSWORD`.
+6. Import `n8n-workflows/*.json`, recreate the 3 credentials, set
+   `BUDGET_OWNER_CHAT_ID` in n8n's environment, activate all 5.
+7. Point n8n's `WEBHOOK_URL` at a stable public HTTPS endpoint (Tailscale Funnel here);
+   a cloudflared *quick* tunnel will not survive restarts.
 
-## Notes / deliberate deviations from the literal spec
+## What's next (roadmap)
 
-- Added `categories.active boolean` — needed to make the "don't suggest a new category
-  past 15 active ones" rule mean anything (otherwise there's no way to retire one).
-- "Telegram Intake" is the **only** Telegram Trigger/webhook across all 5 workflows —
-  income-confirmation replies are routed inside it (checked against a pending `income`
-  row), not via a second trigger, because Telegram only allows one active
-  webhook/poller per bot token.
-- The OpenClaw skill (`budget-capture`) is the actual implementation of OCR +
-  classification — the bridge is a thin, token-authenticated HTTP shim so n8n (which
-  runs in Docker, isolated from the host) can reach it. Both paths call the exact same
-  scripts, so conversational OpenClaw use and n8n-triggered use behave identically.
+- **Phase 2 — frontend web app** (up next): dashboard over the same Postgres data —
+  weekly/weekend pool gauges, category breakdowns, transaction history + editing,
+  category management (rename/retire/hints), income history. Spec to follow.
+- Candidate backlog beyond that: recategorize-by-reply for uncategorized transactions,
+  monthly close-out report, savings/slush tracking over time, export.
+
+## Patch notes
+
+### 2026-07-17 — v0.3 "it actually talks back"
+- **Chat mode**: messages that aren't income replies, photos, or amounts now route to
+  the OpenClaw main agent via a new bridge `/chat` endpoint — the bot holds a real
+  conversation instead of erroring. Per-chat session memory.
+- **Fixed**: texts without an amount (e.g. "Hey") were force-parsed as transactions and
+  crashed on the NOT NULL `amount` column — no reply, nothing logged. Now they chat.
+- **Fixed**: photo path could crash the same way when OCR found no amount — now it asks
+  you to type the amount instead.
+- **Removed** the "sent automatically with n8n" footer from every bot message.
+- Verified end-to-end: chat reply and `petrol engen 250` → R250 under Petrol, both
+  through the real webhook.
+
+### 2026-07-17 — v0.2 "unsticking the intake"
+- **Fixed**: every incoming message silently died after the pending-income lookup —
+  Postgres returning zero rows halts an n8n branch. `alwaysOutputData` + a hardened
+  pending-row check fixed intake for all message types.
+- Repo pushed to GitHub with a write-scoped deploy key; boot-resilience audit done.
+
+### 2026-07-17 — v0.1 "phase 1 backend"
+- Postgres schema + seeds; 5 n8n workflows; `budget-capture` OpenClaw skill (OCR +
+  keyword-first classification with 15-category cap); token-authed host bridge;
+  Tailscale Funnel for the webhook (replacing a dead cloudflared quick-tunnel);
+  everything imported, credentialed, activated.

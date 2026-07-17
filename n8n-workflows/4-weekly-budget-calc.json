@@ -2,22 +2,37 @@
   "name": "Budget - Weekly Budget Calc",
   "nodes": [
     {
-      "parameters": {},
+      "parameters": {
+        "inputSource": "passthrough"
+      },
       "id": "1b6d0878-0000-4159-8df3-ede2cd256b54",
       "name": "Execute Workflow Trigger",
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.1,
-      "position": [-1000, 200]
+      "position": [
+        -1000,
+        200
+      ]
     },
     {
       "parameters": {
-        "rule": { "interval": [{ "field": "cronExpression", "expression": "0 8 * * 1" }] }
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * 1"
+            }
+          ]
+        }
       },
       "id": "b7ef8cac-32f5-457a-8ffb-e6709c7b1b5f",
       "name": "Trigger - Monday 08:00",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [-1000, 400]
+      "position": [
+        -1000,
+        400
+      ]
     },
     {
       "parameters": {
@@ -29,9 +44,15 @@
       "name": "Get Confirmed Income Total",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
-      "position": [-780, 300],
+      "position": [
+        -780,
+        300
+      ],
       "credentials": {
-        "postgres": { "id": "syWj4Ccfmwep9ePX", "name": "Budget Postgres" }
+        "postgres": {
+          "id": "syWj4Ccfmwep9ePX",
+          "name": "Budget Postgres"
+        }
       }
     },
     {
@@ -44,9 +65,15 @@
       "name": "Get True Fixed Total",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
-      "position": [-560, 300],
+      "position": [
+        -560,
+        300
+      ],
       "credentials": {
-        "postgres": { "id": "syWj4Ccfmwep9ePX", "name": "Budget Postgres" }
+        "postgres": {
+          "id": "syWj4Ccfmwep9ePX",
+          "name": "Budget Postgres"
+        }
       }
     },
     {
@@ -58,7 +85,10 @@
       "name": "Compute Budget Weeks",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-340, 300]
+      "position": [
+        -340,
+        300
+      ]
     },
     {
       "parameters": {
@@ -72,9 +102,15 @@
       "name": "Upsert Budget Row",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
-      "position": [-120, 300],
+      "position": [
+        -120,
+        300
+      ],
       "credentials": {
-        "postgres": { "id": "syWj4Ccfmwep9ePX", "name": "Budget Postgres" }
+        "postgres": {
+          "id": "syWj4Ccfmwep9ePX",
+          "name": "Budget Postgres"
+        }
       }
     },
     {
@@ -86,7 +122,10 @@
       "name": "Summarize For Telegram",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [100, 300]
+      "position": [
+        100,
+        300
+      ]
     },
     {
       "parameters": {
@@ -94,28 +133,109 @@
         "operation": "sendMessage",
         "chatId": "={{ $env.BUDGET_OWNER_CHAT_ID }}",
         "text": "={{ $json.message }}",
-        "additionalFields": {}
+        "additionalFields": {
+          "appendAttribution": false
+        }
       },
       "id": "2c54ae13-c727-44e7-bb00-19ba4bdaddbe",
       "name": "Send Budget Confirmation",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
-      "position": [320, 300],
+      "position": [
+        320,
+        300
+      ],
       "credentials": {
-        "telegramApi": { "id": "6wsBoDN4TWeIFvgr", "name": "Budget Telegram Bot" }
+        "telegramApi": {
+          "id": "6wsBoDN4TWeIFvgr",
+          "name": "Budget Telegram Bot"
+        }
       }
     }
   ],
   "connections": {
-    "Execute Workflow Trigger": { "main": [[{ "node": "Get Confirmed Income Total", "type": "main", "index": 0 }]] },
-    "Trigger - Monday 08:00": { "main": [[{ "node": "Get Confirmed Income Total", "type": "main", "index": 0 }]] },
-    "Get Confirmed Income Total": { "main": [[{ "node": "Get True Fixed Total", "type": "main", "index": 0 }]] },
-    "Get True Fixed Total": { "main": [[{ "node": "Compute Budget Weeks", "type": "main", "index": 0 }]] },
-    "Compute Budget Weeks": { "main": [[{ "node": "Upsert Budget Row", "type": "main", "index": 0 }]] },
-    "Upsert Budget Row": { "main": [[{ "node": "Summarize For Telegram", "type": "main", "index": 0 }]] },
-    "Summarize For Telegram": { "main": [[{ "node": "Send Budget Confirmation", "type": "main", "index": 0 }]] }
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Confirmed Income Total",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger - Monday 08:00": {
+      "main": [
+        [
+          {
+            "node": "Get Confirmed Income Total",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Confirmed Income Total": {
+      "main": [
+        [
+          {
+            "node": "Get True Fixed Total",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get True Fixed Total": {
+      "main": [
+        [
+          {
+            "node": "Compute Budget Weeks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Budget Weeks": {
+      "main": [
+        [
+          {
+            "node": "Upsert Budget Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Budget Row": {
+      "main": [
+        [
+          {
+            "node": "Summarize For Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize For Telegram": {
+      "main": [
+        [
+          {
+            "node": "Send Budget Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
   "active": false,
-  "settings": { "executionOrder": "v1", "timezone": "Africa/Johannesburg" },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Johannesburg"
+  },
   "id": "budget-weekly-budget-calc"
 }
