@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #120e1f;
+  --surface: #1e1830;
+  --surface-raised: #28203f;
+  --violet: #8b5cf6;
+  --magenta: #e64fcc;
+  --cyan: #22d3ee;
+  --amber: #f5a623;
+  --text: #f5f3fa;
+  --text-muted: #9c93b5;
+}
+
+body {
+  color: var(--text);
+  background: var(--bg);
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* tabular figures for all monetary values / dates, per spec */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}

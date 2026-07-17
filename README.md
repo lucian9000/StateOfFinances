@@ -1,6 +1,7 @@
 # StateOfFinances
 
-Personal budget tracker, driven entirely through Telegram. Phase 1 (backend) is live.
+Personal budget tracker, driven entirely through Telegram, with a read-only web
+dashboard. Phase 1 (backend) and Phase 2 (dashboard) are both live.
 
 Income lands in USD twice a month (variable ~25th, fixed $550 on the 7th) and gets
 manually confirmed in ZAR. Spending is captured by texting the bot or sending it a
@@ -84,12 +85,15 @@ All times Africa/Johannesburg.
 
 ```
 migrations/001_init.sql              - schema + seed categories
+migrations/002_goals.sql             - goals table (Phase 2 dashboard)
+migrations/003_auth.sql              - Auth.js (@auth/pg-adapter) tables (Phase 2 dashboard)
 bridge/server.js                     - host HTTP shim: /ocr /classify /chat /confirm-category
 bridge/.env.example                  - template; real .env lives only on the server
 n8n-workflows/*.json                 - the 5 workflows (credential IDs only, no secrets)
 openclaw-skill/budget-capture/       - OCR + classification skill (mirror of the live copy)
 infra/budget-bridge.service          - systemd --user unit for the bridge
 infra/docker-compose.budget-db.snippet.yml - the compose block added for budget-db
+web/                                 - Phase 2 dashboard (Next.js) — see web/README.md
 ```
 
 This repo is a mirror for redeployment; the live skill runs from
@@ -134,15 +138,62 @@ n8n's own encrypted store.
 7. Point n8n's `WEBHOOK_URL` at a stable public HTTPS endpoint (Tailscale Funnel here);
    a cloudflared *quick* tunnel will not survive restarts.
 
+## Phase 2 — Dashboard
+
+Read-only mobile-first web app at **https://mrrobot-server.tail15a3bc.ts.net:8443**
+(separate Tailscale Funnel port from n8n, which stays on 443). Two pages:
+
+- **`/` Overview** — greeting header, top categories this period as thumbnails, a
+  gradient balance hero card (all-time running balance, this-period spend/profit, all
+  with odometer digit-roll animation), a time-range pill switcher (Daily/Weekly/
+  Monthly/Yearly — re-queries via URL params, no client-side fetching), a donut +
+  ranked list category breakdown for the selected range, and a Goals section (progress
+  rings replaced with icon + target + percentage, matching the reference design more
+  than the original "rings" text spec).
+- **`/transactions`** — search + category filter chips, grouped by day
+  (Today/Yesterday/date), same colored category avatars as the Overview list.
+
+Auth is a single allowed email via Auth.js magic-link (Resend) — no open sign-up, no
+CRUD (matches the "read-only for now" brief). See `web/README.md` for setup, env vars,
+and the architecture notes (why auth is split into two configs, the `pg` Date-object
+gotcha, etc — worth reading before touching `lib/auth.ts` or `lib/queries.ts`).
+
+Added two migrations for this: `goals` (no goals existed in the Phase 1 schema — this
+was flagged and confirmed with Lucian before adding, rather than inventing something
+during a build) and the standard `@auth/pg-adapter` auth tables.
+
+Built on a `feature/dashboard-frontend` branch per the handoff doc's instruction — not
+yet merged to `main`.
+
 ## What's next (roadmap)
 
-- **Phase 2 — frontend web app** (up next): dashboard over the same Postgres data —
-  weekly/weekend pool gauges, category breakdowns, transaction history + editing,
-  category management (rename/retire/hints), income history. Spec to follow.
-- Candidate backlog beyond that: recategorize-by-reply for uncategorized transactions,
-  monthly close-out report, savings/slush tracking over time, export.
+- Merge `feature/dashboard-frontend` to `main` once reviewed.
+- Fill in the real `RESEND_API_KEY` (currently a placeholder in
+  `~/n8n-automation/.env` as `BUDGET_WEB_RESEND_API_KEY`) — magic-link sign-in won't
+  actually deliver email until that's a real key.
+- Candidate backlog: CRUD (edit/recategorize transactions, manage goals from the UI
+  instead of psql), recategorize-by-reply for uncategorized transactions, monthly
+  close-out report, savings/slush tracking over time, export.
 
 ## Patch notes
+
+### 2026-07-17 — v0.4 "the dashboard"
+- Phase 2 web dashboard built: Next.js 14 App Router + TS + Tailwind, Auth.js v5
+  magic-link (Resend) gated to a single allowed email, Overview + Transactions pages
+  matching the provided design tokens and reference mockup.
+- Added `goals` table (confirmed with Lucian first — no goals concept existed in
+  Phase 1) and the standard Auth.js Postgres-adapter tables.
+- **Fixed during build, before it ever shipped broken**: middleware pulled in `pg` via
+  the full auth config, which doesn't run on Next's Edge runtime — split into an
+  Edge-safe `auth.config.ts` (JWT strategy, no adapter/providers) for middleware and a
+  full `auth.ts` (adapter + Resend provider) for server components/routes. Also caught
+  that `pg` returns `DATE` columns as JS `Date` objects, not strings — normalized once
+  at the query boundary instead of leaving it to break `Date` parsing downstream.
+- Dockerized (`output: standalone`, multi-stage build), added as `budget-web` service
+  in the shared compose stack (joins `budget-db`'s network), exposed via a **second**
+  Tailscale Funnel on port 8443 so it doesn't collide with n8n's on 443.
+- Verified against the real database end-to-end (build, start, hit real balance/
+  transaction/goal data, confirm auth actually redirects) before considering it done.
 
 ### 2026-07-17 — v0.3 "it actually talks back"
 - **Chat mode**: messages that aren't income replies, photos, or amounts now route to
