@@ -1,0 +1,121 @@
+{
+  "name": "Budget - Weekly Budget Calc",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "1b6d0878-0000-4159-8df3-ede2cd256b54",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [-1000, 200]
+    },
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "cronExpression", "expression": "0 8 * * 1" }] }
+      },
+      "id": "b7ef8cac-32f5-457a-8ffb-e6709c7b1b5f",
+      "name": "Trigger - Monday 08:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-1000, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COALESCE(SUM(confirmed_zar), 0) AS income_total FROM income WHERE confirmed_zar IS NOT NULL AND date_trunc('month', pay_date) = date_trunc('month', CURRENT_DATE)",
+        "options": {}
+      },
+      "id": "17a3915a-ce04-41b1-829a-58cbdecc8fd3",
+      "name": "Get Confirmed Income Total",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-780, 300],
+      "credentials": {
+        "postgres": { "id": "syWj4Ccfmwep9ePX", "name": "Budget Postgres" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COALESCE(SUM(budget_amount), 0) AS fixed_total FROM categories WHERE type = 'true_fixed' AND active = true",
+        "options": {}
+      },
+      "id": "0593e095-8c43-43b8-8b48-7d92cfe7323b",
+      "name": "Get True Fixed Total",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-560, 300],
+      "credentials": {
+        "postgres": { "id": "syWj4Ccfmwep9ePX", "name": "Budget Postgres" }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const income_total = Number($('Get Confirmed Income Total').all()[0].json.income_total || 0);\nconst fixed_total = Number($('Get True Fixed Total').all()[0].json.fixed_total || 0);\n\nconst savings_10pct = income_total * 0.10;\nconst slush_5pct = income_total * 0.05;\nconst remainder = income_total - savings_10pct - slush_5pct - fixed_total;\n\nconst today = new Date();\nconst year = today.getFullYear();\nconst monthIdx = today.getMonth();\nconst daysInMonth = new Date(year, monthIdx + 1, 0).getDate();\nconst totalWeeks = Math.ceil(daysInMonth / 7);\nconst currentWeekNumber = Math.ceil(today.getDate() / 7);\nconst weeksLeft = Math.max(totalWeeks - currentWeekNumber + 1, 1);\n\nconst weeklyGross = remainder / weeksLeft;\nconst weekendBudget = weeklyGross * 0.20;\nconst weekdayBudget = weeklyGross - weekendBudget;\n\nconst monthDate = `${year}-${String(monthIdx + 1).padStart(2, '0')}-01`;\n\nconst items = [];\nfor (let w = currentWeekNumber; w <= totalWeeks; w++) {\n  items.push({\n    json: {\n      month: monthDate,\n      income_total,\n      savings_10pct: Number(savings_10pct.toFixed(2)),\n      slush_5pct: Number(slush_5pct.toFixed(2)),\n      weekly_budget: Number(weekdayBudget.toFixed(2)),\n      weekend_budget: Number(weekendBudget.toFixed(2)),\n      week_number: w,\n    },\n  });\n}\nreturn items;"
+      },
+      "id": "79cfc1ef-38c0-4575-ae2b-70f41cc35193",
+      "name": "Compute Budget Weeks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-340, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO budgets (month, income_total, savings_10pct, slush_5pct, weekly_budget, weekend_budget, week_number) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (month, week_number) DO UPDATE SET income_total = EXCLUDED.income_total, savings_10pct = EXCLUDED.savings_10pct, slush_5pct = EXCLUDED.slush_5pct, weekly_budget = EXCLUDED.weekly_budget, weekend_budget = EXCLUDED.weekend_budget RETURNING week_number, weekly_budget, weekend_budget",
+        "options": {
+          "queryReplacement": "={{ [$json.month, $json.income_total, $json.savings_10pct, $json.slush_5pct, $json.weekly_budget, $json.weekend_budget, $json.week_number] }}"
+        }
+      },
+      "id": "6204e261-acde-4da8-a850-8913173be9be",
+      "name": "Upsert Budget Row",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-120, 300],
+      "credentials": {
+        "postgres": { "id": "syWj4Ccfmwep9ePX", "name": "Budget Postgres" }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const rows = $input.all().map(i => i.json);\nconst first = $('Compute Budget Weeks').all()[0].json;\nconst lines = [\n  'Weekly budget recalculated.',\n  `Income this month: R${first.income_total}`,\n  `Savings (10%): R${first.savings_10pct}  |  Slush (5%): R${first.slush_5pct}`,\n  '',\n];\nfor (const r of rows) {\n  lines.push(`Week ${r.week_number}: weekday R${r.weekly_budget}, weekend R${r.weekend_budget}`);\n}\nreturn [{ json: { message: lines.join('\\n') } }];"
+      },
+      "id": "79fd4d9d-7f65-45d4-b06b-1097915766bb",
+      "name": "Summarize For Telegram",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [100, 300]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $env.BUDGET_OWNER_CHAT_ID }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": {}
+      },
+      "id": "2c54ae13-c727-44e7-bb00-19ba4bdaddbe",
+      "name": "Send Budget Confirmation",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [320, 300],
+      "credentials": {
+        "telegramApi": { "id": "6wsBoDN4TWeIFvgr", "name": "Budget Telegram Bot" }
+      }
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": { "main": [[{ "node": "Get Confirmed Income Total", "type": "main", "index": 0 }]] },
+    "Trigger - Monday 08:00": { "main": [[{ "node": "Get Confirmed Income Total", "type": "main", "index": 0 }]] },
+    "Get Confirmed Income Total": { "main": [[{ "node": "Get True Fixed Total", "type": "main", "index": 0 }]] },
+    "Get True Fixed Total": { "main": [[{ "node": "Compute Budget Weeks", "type": "main", "index": 0 }]] },
+    "Compute Budget Weeks": { "main": [[{ "node": "Upsert Budget Row", "type": "main", "index": 0 }]] },
+    "Upsert Budget Row": { "main": [[{ "node": "Summarize For Telegram", "type": "main", "index": 0 }]] },
+    "Summarize For Telegram": { "main": [[{ "node": "Send Budget Confirmation", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1", "timezone": "Africa/Johannesburg" },
+  "id": "budget-weekly-budget-calc"
+}

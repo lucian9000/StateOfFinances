@@ -1,0 +1,21 @@
+[Unit]
+Description=Budget Tracker n8n<->OpenClaw bridge
+After=network-online.target
+Wants=network-online.target
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+[Service]
+ExecStart=/usr/bin/node /home/mrrobot/budget-tracker/bridge/server.js
+EnvironmentFile=/home/mrrobot/budget-tracker/bridge/.env
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+TimeoutStartSec=30
+OOMPolicy=continue
+KillMode=control-group
+Environment=HOME=/home/mrrobot
+Environment=PATH=/usr/bin:/home/mrrobot/.local/bin:/home/mrrobot/.npm-global/bin:/home/mrrobot/bin:/usr/local/bin:/bin
+
+[Install]
+WantedBy=default.target

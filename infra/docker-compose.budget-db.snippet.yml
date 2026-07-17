@@ -1,0 +1,25 @@
+# This is NOT a standalone compose file — it's the exact service block that was added
+# to the existing ~/n8n-automation/docker-compose.yml on the server (which also runs
+# n8n and the unrelated second-brain stack). Keeping this here just for reference /
+# redeployment, not meant to be `docker compose up`'d on its own.
+#
+# Also added to that same file, under the `n8n` service's `environment:` list:
+#   - BUDGET_OWNER_CHAT_ID=<telegram chat id>
+#
+# And BUDGET_DB_PASSWORD was added to ~/n8n-automation/.env (not committed here).
+
+services:
+  budget-db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: budget_app
+      POSTGRES_PASSWORD: ${BUDGET_DB_PASSWORD}
+      POSTGRES_DB: budget_tracker
+    volumes:
+    - budget_tracker_data:/var/lib/postgresql/data
+    ports:
+    - 127.0.0.1:5434:5432
+
+volumes:
+  budget_tracker_data: null

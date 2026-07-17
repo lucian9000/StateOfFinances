@@ -1,0 +1,82 @@
+{
+  "name": "Budget - Weekend Check-in",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "cronExpression", "expression": "0 8 * * 6" }] }
+      },
+      "id": "d667b561-e4c0-40ae-ae09-653172259c0b",
+      "name": "Trigger - Saturday 08:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-800, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM budgets WHERE month = date_trunc('month', CURRENT_DATE)::date AND week_number = CEIL(EXTRACT(DAY FROM CURRENT_DATE) / 7.0) LIMIT 1",
+        "options": {}
+      },
+      "id": "d88d83f4-c409-4b58-a5c6-0376cea00be9",
+      "name": "Get Current Week Budget",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-580, 300],
+      "credentials": {
+        "postgres": { "id": "syWj4Ccfmwep9ePX", "name": "Budget Postgres" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COALESCE(SUM(amount), 0) AS weekend_spent FROM transactions WHERE date >= date_trunc('week', CURRENT_DATE)::date AND date <= CURRENT_DATE AND EXTRACT(DOW FROM date) IN (0,6)",
+        "options": {}
+      },
+      "id": "3a6e3737-e468-4dab-84a6-79191c2d803c",
+      "name": "Get Weekend Spend",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-360, 300],
+      "credentials": {
+        "postgres": { "id": "syWj4Ccfmwep9ePX", "name": "Budget Postgres" }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const budgetRows = $('Get Current Week Budget').all();\nconst budget = budgetRows.length ? budgetRows[0].json : null;\nconst spend = $('Get Weekend Spend').all()[0].json;\n\nif (!budget) {\n  return [{ json: { message: 'No budget row found for this week yet — run \"Weekly Budget Calc\" to generate one.' } }];\n}\n\nconst remaining = Number(budget.weekend_budget) - Number(spend.weekend_spent);\nconst message = `Weekend check-in — week ${budget.week_number}\\nSpent: R${spend.weekend_spent} of R${budget.weekend_budget}\\nRemaining: R${remaining.toFixed(2)}`;\n\nreturn [{ json: { message } }];"
+      },
+      "id": "289b4bb7-3497-4f02-8e2a-1cf17b5fe06d",
+      "name": "Format Weekend Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-140, 300]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $env.BUDGET_OWNER_CHAT_ID }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": {}
+      },
+      "id": "3fbd8699-443c-4e51-b33b-c1d2dd7bc752",
+      "name": "Send Weekend Summary",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [80, 300],
+      "credentials": {
+        "telegramApi": { "id": "6wsBoDN4TWeIFvgr", "name": "Budget Telegram Bot" }
+      }
+    }
+  ],
+  "connections": {
+    "Trigger - Saturday 08:00": { "main": [[{ "node": "Get Current Week Budget", "type": "main", "index": 0 }]] },
+    "Get Current Week Budget": { "main": [[{ "node": "Get Weekend Spend", "type": "main", "index": 0 }]] },
+    "Get Weekend Spend": { "main": [[{ "node": "Format Weekend Summary", "type": "main", "index": 0 }]] },
+    "Format Weekend Summary": { "main": [[{ "node": "Send Weekend Summary", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1", "timezone": "Africa/Johannesburg" },
+  "id": "budget-weekend-checkin"
+}

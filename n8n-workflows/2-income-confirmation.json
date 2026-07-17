@@ -1,0 +1,89 @@
+{
+  "name": "Budget - Income Confirmation",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "cronExpression", "expression": "0 8 7 * *" }] }
+      },
+      "id": "796c9f52-6fdb-4098-8bde-1c81df5bf65f",
+      "name": "Trigger - 7th (Fixed Pay)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-800, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { type: 'fixed', expected_usd: 550 } }];"
+      },
+      "id": "9d2e760f-02e7-494d-80b9-90c0f0fe4b6c",
+      "name": "Mark Fixed Pay",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-580, 200]
+    },
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "cronExpression", "expression": "0 8 25 * *" }] }
+      },
+      "id": "846f0476-9c65-4861-8ef2-4b4fa17f5c47",
+      "name": "Trigger - 25th (Variable Pay)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-800, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { type: 'variable', expected_usd: null } }];"
+      },
+      "id": "d9f86995-b8b3-46cc-9e9e-ac6a4ea5afe3",
+      "name": "Mark Variable Pay",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-580, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO income (pay_date, type, expected_usd) VALUES (CURRENT_DATE, $1, $2) RETURNING id, type",
+        "options": {
+          "queryReplacement": "={{ [$json.type, $json.expected_usd] }}"
+        }
+      },
+      "id": "8b92947a-5d4f-4932-adef-5cfa85cec4d9",
+      "name": "Insert Pending Income",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-360, 300],
+      "credentials": {
+        "postgres": { "id": "syWj4Ccfmwep9ePX", "name": "Budget Postgres" }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $env.BUDGET_OWNER_CHAT_ID }}",
+        "text": "=Payday check-in: what ZAR amount landed today for your {{ $json.type }} pay? Just reply with the number (e.g. 9500).",
+        "additionalFields": {}
+      },
+      "id": "a4e6aa2b-677e-4563-b11c-9a130c4678ed",
+      "name": "Ask For ZAR Amount",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [-140, 300],
+      "credentials": {
+        "telegramApi": { "id": "6wsBoDN4TWeIFvgr", "name": "Budget Telegram Bot" }
+      }
+    }
+  ],
+  "connections": {
+    "Trigger - 7th (Fixed Pay)": { "main": [[{ "node": "Mark Fixed Pay", "type": "main", "index": 0 }]] },
+    "Mark Fixed Pay": { "main": [[{ "node": "Insert Pending Income", "type": "main", "index": 0 }]] },
+    "Trigger - 25th (Variable Pay)": { "main": [[{ "node": "Mark Variable Pay", "type": "main", "index": 0 }]] },
+    "Mark Variable Pay": { "main": [[{ "node": "Insert Pending Income", "type": "main", "index": 0 }]] },
+    "Insert Pending Income": { "main": [[{ "node": "Ask For ZAR Amount", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1", "timezone": "Africa/Johannesburg" },
+  "id": "budget-income-confirmation"
+}

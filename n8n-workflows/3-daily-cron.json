@@ -1,0 +1,97 @@
+{
+  "name": "Budget - Daily Cron",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "cronExpression", "expression": "0 7 * * *" }] }
+      },
+      "id": "38d5b217-1d88-4570-992e-f8ab5ec60eb6",
+      "name": "Trigger - 07:00 Daily",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-800, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM budgets WHERE month = date_trunc('month', CURRENT_DATE)::date AND week_number = CEIL(EXTRACT(DAY FROM CURRENT_DATE) / 7.0) LIMIT 1",
+        "options": {}
+      },
+      "id": "6561c076-305e-40de-af07-3c0082830dc8",
+      "name": "Get Current Week Budget",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-580, 300],
+      "credentials": {
+        "postgres": { "id": "syWj4Ccfmwep9ePX", "name": "Budget Postgres" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT c.name, SUM(t.amount) AS spent FROM transactions t JOIN categories c ON c.id = t.category_id WHERE t.date >= date_trunc('week', CURRENT_DATE)::date AND t.date <= CURRENT_DATE GROUP BY c.name ORDER BY spent DESC",
+        "options": {}
+      },
+      "id": "34d6daa1-fa14-4def-9d5b-f37c5269b930",
+      "name": "Get Week-to-Date By Category",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-360, 300],
+      "credentials": {
+        "postgres": { "id": "syWj4Ccfmwep9ePX", "name": "Budget Postgres" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COALESCE(SUM(amount) FILTER (WHERE EXTRACT(DOW FROM date) NOT IN (0,6)), 0) AS weekday_spent, COALESCE(SUM(amount) FILTER (WHERE EXTRACT(DOW FROM date) IN (0,6)), 0) AS weekend_spent FROM transactions WHERE date >= date_trunc('week', CURRENT_DATE)::date AND date <= CURRENT_DATE",
+        "options": {}
+      },
+      "id": "1b6d0878-3135-4159-8df3-ede2cd256b54",
+      "name": "Get Weekday-Weekend Totals",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-140, 300],
+      "credentials": {
+        "postgres": { "id": "syWj4Ccfmwep9ePX", "name": "Budget Postgres" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const budgetRows = $('Get Current Week Budget').all();\nconst budget = budgetRows.length ? budgetRows[0].json : null;\nconst byCategory = $('Get Week-to-Date By Category').all().map(i => i.json);\nconst totals = $('Get Weekday-Weekend Totals').first().json;\n\nif (!budget) {\n  return [{ json: { message: 'No budget row found for this week yet — run \"Weekly Budget Calc\" to generate one.' } }];\n}\n\nconst weekdayRemaining = Number(budget.weekly_budget) - Number(totals.weekday_spent);\nconst weekendRemaining = Number(budget.weekend_budget) - Number(totals.weekend_spent);\n\nconst lines = [`Morning summary — week ${budget.week_number}`, ''];\nlines.push(`Weekday pool: R${totals.weekday_spent} spent of R${budget.weekly_budget} (R${weekdayRemaining.toFixed(2)} left)`);\nlines.push(`Weekend pool: R${totals.weekend_spent} spent of R${budget.weekend_budget} (R${weekendRemaining.toFixed(2)} left)`);\nlines.push('');\nlines.push('By category this week:');\nif (byCategory.length === 0) {\n  lines.push('  (nothing logged yet)');\n} else {\n  for (const row of byCategory) {\n    lines.push(`  ${row.name}: R${row.spent}`);\n  }\n}\n\nreturn [{ json: { message: lines.join('\\n') } }];"
+      },
+      "id": "5f7022b1-3168-4267-bd9e-3f7a9fda981a",
+      "name": "Format Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [80, 300]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $env.BUDGET_OWNER_CHAT_ID }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": {}
+      },
+      "id": "d0f6e526-fd7c-40a3-873c-20497051627f",
+      "name": "Send Daily Summary",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [300, 300],
+      "credentials": {
+        "telegramApi": { "id": "6wsBoDN4TWeIFvgr", "name": "Budget Telegram Bot" }
+      }
+    }
+  ],
+  "connections": {
+    "Trigger - 07:00 Daily": { "main": [[{ "node": "Get Current Week Budget", "type": "main", "index": 0 }]] },
+    "Get Current Week Budget": { "main": [[{ "node": "Get Week-to-Date By Category", "type": "main", "index": 0 }]] },
+    "Get Week-to-Date By Category": { "main": [[{ "node": "Get Weekday-Weekend Totals", "type": "main", "index": 0 }]] },
+    "Get Weekday-Weekend Totals": { "main": [[{ "node": "Format Summary", "type": "main", "index": 0 }]] },
+    "Format Summary": { "main": [[{ "node": "Send Daily Summary", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1", "timezone": "Africa/Johannesburg" },
+  "id": "budget-daily-cron"
+}
