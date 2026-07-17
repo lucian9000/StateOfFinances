@@ -26,13 +26,14 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [-1180, 300],
+      "alwaysOutputData": true,
       "credentials": {
         "postgres": { "id": "syWj4Ccfmwep9ePX", "name": "Budget Postgres" }
       }
     },
     {
       "parameters": {
-        "jsCode": "const trig = $('Telegram Trigger').item.json;\nconst msg = trig.message || {};\nconst pendingItems = $input.all();\nconst pending = pendingItems.length ? pendingItems[0].json : null;\n\nconst text = (msg.text || '').trim();\nconst hasPhoto = Array.isArray(msg.photo) && msg.photo.length > 0;\nconst numMatch = text.replace(/^[Rr]\\s*/, '').match(/^\\d+(\\.\\d+)?$/);\n\nlet route = 'text';\nif (pending && numMatch) {\n  route = 'income';\n} else if (hasPhoto) {\n  route = 'photo';\n}\n\nreturn [{\n  json: {\n    route,\n    chatId: msg.chat.id,\n    messageId: msg.message_id,\n    text,\n    pendingIncomeId: pending ? pending.id : null,\n    pendingIncomeType: pending ? pending.type : null,\n    incomeAmount: numMatch ? parseFloat(numMatch[0]) : null,\n    photoFileId: hasPhoto ? msg.photo[msg.photo.length - 1].file_id : null,\n  }\n}];"
+        "jsCode": "const trig = $('Telegram Trigger').item.json;\nconst msg = trig.message || {};\nconst pendingItems = $input.all();\nconst pending = (pendingItems.length && pendingItems[0].json && pendingItems[0].json.id) ? pendingItems[0].json : null;\n\nconst text = (msg.text || '').trim();\nconst hasPhoto = Array.isArray(msg.photo) && msg.photo.length > 0;\nconst numMatch = text.replace(/^[Rr]\\s*/, '').match(/^\\d+(\\.\\d+)?$/);\n\nlet route = 'text';\nif (pending && numMatch) {\n  route = 'income';\n} else if (hasPhoto) {\n  route = 'photo';\n}\n\nreturn [{\n  json: {\n    route,\n    chatId: msg.chat.id,\n    messageId: msg.message_id,\n    text,\n    pendingIncomeId: pending ? pending.id : null,\n    pendingIncomeType: pending ? pending.type : null,\n    incomeAmount: numMatch ? parseFloat(numMatch[0]) : null,\n    photoFileId: hasPhoto ? msg.photo[msg.photo.length - 1].file_id : null,\n  }\n}];"
       },
       "id": "ee91187c-5191-4d5b-9fbc-06a33f71e59c",
       "name": "Route Message",
