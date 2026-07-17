@@ -21,6 +21,9 @@ export default function SignInPage({
           type="email"
           name="email"
           required
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
           placeholder="you@example.com"
           className="w-full rounded-card border border-white/10 bg-surface px-4 py-3 text-text placeholder:text-text-muted focus:border-violet focus:outline-none"
         />

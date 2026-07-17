@@ -16,8 +16,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     ...authConfig.callbacks,
     async signIn({ user }) {
-      const allowed = process.env.ALLOWED_EMAIL;
-      return Boolean(allowed && user.email === allowed);
+      const allowed = process.env.ALLOWED_EMAIL?.trim().toLowerCase();
+      const submitted = user.email?.trim().toLowerCase();
+      return Boolean(allowed && submitted && submitted === allowed);
     },
   },
 });
