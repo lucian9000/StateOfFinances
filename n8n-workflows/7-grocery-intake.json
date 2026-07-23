@@ -9,7 +9,7 @@
       "typeVersion": 1.1,
       "position": [-1400, 300],
       "webhookId": "stateofgroceries-intake",
-      "credentials": { "telegramApi": { "id": "REPLACE_WITH_STATEOFGROCERIES_CRED", "name": "StateOfGroceries Bot" } }
+      "credentials": { "telegramApi": { "id": "47FuV34dHKhalTVR", "name": "StateOfGroceries Bot" } }
     },
     {
       "parameters": {
@@ -134,7 +134,7 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [200, 300],
-      "credentials": { "telegramApi": { "id": "REPLACE_WITH_STATEOFGROCERIES_CRED", "name": "StateOfGroceries Bot" } }
+      "credentials": { "telegramApi": { "id": "47FuV34dHKhalTVR", "name": "StateOfGroceries Bot" } }
     }
   ],
   "connections": {
