@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
-import { auth } from "@/lib/auth";
+import { ChevronRight, LogOut } from "lucide-react";
+import { signOut } from "@/lib/auth";
+import { requireSession } from "@/lib/requireSession";
 import { getOverview, getGoals, type TimeRange } from "@/lib/queries";
 import { categoryColor } from "@/lib/categoryColors";
 import { TimeRangePicker } from "@/components/TimeRangePicker";
@@ -20,7 +21,7 @@ export default async function OverviewPage({
     ? (searchParams.range as TimeRange)
     : "monthly";
 
-  const session = await auth();
+  const session = await requireSession();
   const [overview, goals] = await Promise.all([getOverview(range), getGoals()]);
 
   const firstName =
@@ -33,8 +34,25 @@ export default async function OverviewPage({
           <p className="text-sm text-text-muted">Hello,</p>
           <h1 className="font-display text-xl font-semibold capitalize">{firstName}</h1>
         </div>
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-surface-raised font-display text-sm font-semibold">
-          {firstName.charAt(0).toUpperCase()}
+        <div className="flex items-center gap-2">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-surface-raised font-display text-sm font-semibold">
+            {firstName.charAt(0).toUpperCase()}
+          </div>
+          <form
+            action={async () => {
+              "use server";
+              await signOut({ redirectTo: "/signin" });
+            }}
+          >
+            <button
+              type="submit"
+              aria-label="Sign out"
+              title="Sign out"
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-surface-raised text-text-muted transition hover:text-text"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          </form>
         </div>
       </header>
 

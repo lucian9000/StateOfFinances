@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
+import { requireSession } from "@/lib/requireSession";
 import { getTransactions, getCategoryList } from "@/lib/queries";
 import { groupTransactionsByDay } from "@/lib/groupByDay";
 import { categoryColor } from "@/lib/categoryColors";
@@ -11,6 +12,8 @@ export default async function TransactionsPage({
 }: {
   searchParams: { q?: string; category?: string };
 }) {
+  await requireSession();
+
   const categoryId = searchParams.category ? parseInt(searchParams.category, 10) : undefined;
 
   const [transactions, categories] = await Promise.all([
