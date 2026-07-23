@@ -20,5 +20,8 @@ export const authConfig: NextAuthConfig = {
     verifyRequest: "/signin/verify",
     error: "/signin",
   },
-  session: { strategy: "jwt" },
+  // 7-day session (down from NextAuth's 30-day default) — this dashboard holds
+  // financial data and is reachable on a public Tailscale Funnel URL, so a
+  // forgotten/left-open session should expire sooner. maxAge is in seconds.
+  session: { strategy: "jwt", maxAge: 7 * 24 * 60 * 60 },
 };
