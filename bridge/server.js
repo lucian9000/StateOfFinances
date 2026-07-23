@@ -16,6 +16,10 @@ const PORT = Number(process.env.BRIDGE_PORT || 8790);
 const TOKEN = process.env.BRIDGE_TOKEN;
 const SKILL_DIR = process.env.SKILL_DIR
   || '/home/mrrobot/.openclaw/workspace/skills/budget-capture';
+const SPECIALS_DIR = process.env.SPECIALS_SKILL_DIR
+  || '/home/mrrobot/.openclaw/workspace/skills/specials-scraper';
+const RECONCILE_DIR = process.env.RECONCILE_SKILL_DIR
+  || '/home/mrrobot/.openclaw/workspace/skills/grocery-reconcile';
 const MAX_BODY_BYTES = 15 * 1024 * 1024; // receipt photos
 
 if (!TOKEN) {
@@ -41,12 +45,12 @@ function readBody(req) {
   });
 }
 
-function runScript(scriptName, arg) {
+function runScriptIn(dir, scriptName, arg, timeout = 90000) {
   return new Promise((resolve, reject) => {
     execFile(
       'node',
-      [path.join(SKILL_DIR, 'scripts', scriptName), arg],
-      { timeout: 90000, maxBuffer: 10 * 1024 * 1024 },
+      [path.join(dir, 'scripts', scriptName), arg],
+      { timeout, maxBuffer: 10 * 1024 * 1024 },
       (err, stdout, stderr) => {
         if (err) {
           reject(new Error(stderr || err.message));
@@ -60,6 +64,10 @@ function runScript(scriptName, arg) {
       }
     );
   });
+}
+
+function runScript(scriptName, arg) {
+  return runScriptIn(SKILL_DIR, scriptName, arg);
 }
 
 function send(res, status, body) {
@@ -134,6 +142,30 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && req.url === '/confirm-category') {
       const body = (await readBody(req)).toString('utf8') || '{}';
       const result = await runScript('confirm_category.js', body);
+      send(res, 200, result);
+      return;
+    }
+
+    // StateOfGroceries: refresh specials (scheduled + /refresh). Longer timeout —
+    // several ScrapingBee calls + LLM parsing.
+    if (req.method === 'POST' && req.url === '/scrape-specials') {
+      const result = await runScriptIn(SPECIALS_DIR, 'scrape.js', '', 280000);
+      send(res, 200, result);
+      return;
+    }
+
+    // Reconcile a Groceries slip's OCR line items against the pending grocery list.
+    if (req.method === 'POST' && req.url === '/reconcile') {
+      const body = (await readBody(req)).toString('utf8') || '{}';
+      const result = await runScriptIn(RECONCILE_DIR, 'reconcile.js', body, 120000);
+      send(res, 200, result);
+      return;
+    }
+
+    // Resolve an "uncertain" reconciliation reply (Yes/No/Different) + learn.
+    if (req.method === 'POST' && req.url === '/resolve') {
+      const body = (await readBody(req)).toString('utf8') || '{}';
+      const result = await runScriptIn(RECONCILE_DIR, 'resolve.js', body, 120000);
       send(res, 200, result);
       return;
     }

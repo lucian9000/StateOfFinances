@@ -1,0 +1,159 @@
+{
+  "name": "Grocery Intake",
+  "nodes": [
+    {
+      "parameters": { "updates": ["message"] },
+      "id": "1355a86e-0d7c-4ce4-a7a2-a78de3f63c13",
+      "name": "Grocery Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [-1400, 300],
+      "webhookId": "stateofgroceries-intake",
+      "credentials": { "telegramApi": { "id": "REPLACE_WITH_STATEOFGROCERIES_CRED", "name": "StateOfGroceries Bot" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const msg = $('Grocery Telegram Trigger').item.json.message || {};\nconst text = (msg.text || '').trim();\nconst from = msg.from || {};\nconst isRefresh = /^\\/refresh\\b/i.test(text);\n\nlet rest = text;\nlet quantity = '1';\nconst qm = rest.match(/^(\\d+)\\s+(.*)$/);\nif (qm) { quantity = qm[1]; rest = qm[2]; }\nlet estimated = null;\nconst pm = rest.match(/R\\s?(\\d+(?:\\.\\d+)?)/i);\nif (pm) { estimated = parseFloat(pm[1]); rest = rest.replace(pm[0], '').trim(); }\nconst itemName = rest.replace(/\\s+/g, ' ').trim();\n\nreturn [{ json: {\n  mode: isRefresh ? 'refresh' : 'additem',\n  text,\n  chatId: msg.chat.id,\n  messageId: msg.message_id,\n  fromId: from.id || null,\n  fromName: from.first_name || from.username || 'Someone',\n  itemName,\n  quantity,\n  estimatedPrice: estimated,\n} }];"
+      },
+      "id": "0abdb4e9-3fbb-4ae4-9d6c-957a20c318c0",
+      "name": "Parse Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1180, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [
+            { "id": "c83d4277-f4d3-443d-9d4d-d551ffbb4e0f", "leftValue": "={{ $json.mode }}", "rightValue": "refresh", "operator": { "type": "string", "operation": "equals" } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f6614c4e-bb35-40f6-aed6-e055393d1584",
+      "name": "Is /refresh?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-960, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://172.18.0.1:8790/scrape-specials",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={}",
+        "options": { "timeout": 290000 }
+      },
+      "id": "c26914fb-4c25-41ba-9730-9127ea35db80",
+      "name": "Bridge Scrape Specials",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-740, 160],
+      "credentials": { "httpHeaderAuth": { "id": "Eg83ctL4osyXjKdT", "name": "Budget Bridge Token" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const r = $json;\nlet lines;\nif (r.stale) {\n  lines = [r.message || 'Refresh failed — showing last successful fetch.'];\n} else {\n  const d = r.last_scraped_at ? new Date(r.last_scraped_at).toISOString().slice(0,10) : 'now';\n  lines = [`🛍️ Specials refreshed — ${r.scraped_count} deals (prices as of ${d}).`];\n}\nreturn [{ json: { message: lines.join('\\n') } }];"
+      },
+      "id": "8be494d7-f09c-4170-8df7-b589e203a9e6",
+      "name": "Format Refresh Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-520, 160]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO grocery_items (item_name, quantity, requested_by, requested_by_name, estimated_price, status) VALUES ($1, $2, $3, $4, $5, 'pending') RETURNING id",
+        "options": {
+          "queryReplacement": "={{ [ $json.itemName, $json.quantity, $json.fromId, $json.fromName, $json.estimatedPrice ] }}"
+        }
+      },
+      "id": "2b734197-04fc-4799-976f-b92933e19187",
+      "name": "Insert Grocery Item",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-740, 440],
+      "credentials": { "postgres": { "id": "syWj4Ccfmwep9ePX", "name": "Budget Postgres" } }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT store, item_keyword, description, price, valid_until, to_char(scraped_at, 'YYYY-MM-DD') AS as_of FROM specials WHERE $1 ILIKE '%' || item_keyword || '%' OR item_keyword ILIKE '%' || $1 || '%' OR similarity(item_keyword, $1) > 0.3 ORDER BY similarity(item_keyword, $1) DESC LIMIT 1",
+        "options": {
+          "queryReplacement": "={{ [ $('Parse Message').item.json.itemName ] }}"
+        }
+      },
+      "id": "b3448460-3250-4447-968c-7fa18ff7f2ff",
+      "name": "Specials Match",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-520, 440],
+      "alwaysOutputData": true,
+      "credentials": { "postgres": { "id": "syWj4Ccfmwep9ePX", "name": "Budget Postgres" } }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT (SELECT budget_amount FROM categories WHERE id = 8) AS budget, COALESCE((SELECT SUM(actual_price) FROM grocery_items WHERE status = 'bought' AND bought_at >= date_trunc('month', CURRENT_DATE)), 0) AS bought, COALESCE((SELECT SUM(estimated_price) FROM grocery_items WHERE status = 'pending' AND created_at >= date_trunc('month', CURRENT_DATE)), 0) AS pending_est",
+        "options": {}
+      },
+      "id": "b77bddd1-72c1-4420-bbc5-bce4ee516b7b",
+      "name": "Projected Remaining",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-300, 440],
+      "alwaysOutputData": true,
+      "credentials": { "postgres": { "id": "syWj4Ccfmwep9ePX", "name": "Budget Postgres" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const p = $('Parse Message').item.json;\nconst sp = $('Specials Match').first().json || {};\nconst calc = $('Projected Remaining').first().json || {};\n\nconst lines = [`✅ Added \"${p.itemName}\"${p.quantity && p.quantity !== '1' ? ' x' + p.quantity : ''} for ${p.fromName}.`];\n\nif (sp && sp.store) {\n  const price = sp.price != null ? `R${Number(sp.price).toFixed(2)}` : '';\n  const until = sp.valid_until ? ` until ${sp.valid_until}` : '';\n  const desc = sp.description || sp.item_keyword;\n  lines.push(`🏷️ On special at ${sp.store}: ${desc} ${price}${until} (prices as of ${sp.as_of}).`);\n}\n\nif (calc.budget == null) {\n  lines.push('(Set a monthly Groceries budget to see projected remaining.)');\n} else {\n  const budget = Number(calc.budget);\n  const bought = Number(calc.bought);\n  const pendingEst = Number(calc.pending_est);\n  const proj = budget - bought - pendingEst;\n  lines.push(`💰 Projected remaining: R${proj.toFixed(2)} of R${budget.toFixed(2)} — if all pending items are bought at estimate (R${bought.toFixed(2)} bought, R${pendingEst.toFixed(2)} pending est. this month).`);\n}\n\nreturn [{ json: { message: lines.join('\\n') } }];"
+      },
+      "id": "897ff9b6-b83b-4490-989c-ab5330a539ab",
+      "name": "Format Add Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-80, 440]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $('Parse Message').item.json.chatId }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": { "appendAttribution": false }
+      },
+      "id": "acca4b43-219b-421f-a7cc-69548bdad5b4",
+      "name": "Send Reply",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [200, 300],
+      "credentials": { "telegramApi": { "id": "REPLACE_WITH_STATEOFGROCERIES_CRED", "name": "StateOfGroceries Bot" } }
+    }
+  ],
+  "connections": {
+    "Grocery Telegram Trigger": { "main": [[{ "node": "Parse Message", "type": "main", "index": 0 }]] },
+    "Parse Message": { "main": [[{ "node": "Is /refresh?", "type": "main", "index": 0 }]] },
+    "Is /refresh?": {
+      "main": [
+        [{ "node": "Bridge Scrape Specials", "type": "main", "index": 0 }],
+        [{ "node": "Insert Grocery Item", "type": "main", "index": 0 }]
+      ]
+    },
+    "Bridge Scrape Specials": { "main": [[{ "node": "Format Refresh Reply", "type": "main", "index": 0 }]] },
+    "Format Refresh Reply": { "main": [[{ "node": "Send Reply", "type": "main", "index": 0 }]] },
+    "Insert Grocery Item": { "main": [[{ "node": "Specials Match", "type": "main", "index": 0 }]] },
+    "Specials Match": { "main": [[{ "node": "Projected Remaining", "type": "main", "index": 0 }]] },
+    "Projected Remaining": { "main": [[{ "node": "Format Add Reply", "type": "main", "index": 0 }]] },
+    "Format Add Reply": { "main": [[{ "node": "Send Reply", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1", "timezone": "Africa/Johannesburg" },
+  "id": "grocery-intake"
+}

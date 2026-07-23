@@ -1,0 +1,37 @@
+{
+  "name": "Scrape Specials - Scheduled",
+  "nodes": [
+    {
+      "parameters": { "rule": { "interval": [{ "field": "cronExpression", "expression": "0 6 * * 1" }] } },
+      "id": "acca4b43-219b-421f-a7cc-69548bdad5b4",
+      "name": "Trigger - Monday 06:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-600, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://172.18.0.1:8790/scrape-specials",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={}",
+        "options": { "timeout": 290000 }
+      },
+      "id": "74b74305-7e6a-4007-8e69-7105b13f0762",
+      "name": "Bridge Scrape Specials",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-380, 300],
+      "credentials": { "httpHeaderAuth": { "id": "Eg83ctL4osyXjKdT", "name": "Budget Bridge Token" } }
+    }
+  ],
+  "connections": {
+    "Trigger - Monday 06:00": { "main": [[{ "node": "Bridge Scrape Specials", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1", "timezone": "Africa/Johannesburg" },
+  "id": "scrape-specials-scheduled"
+}

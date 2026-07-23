@@ -1,0 +1,37 @@
+{
+  "name": "Scrape Specials - Manual",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "b650658b-d482-48f6-bc21-6e528562c66b",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [-600, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://172.18.0.1:8790/scrape-specials",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={}",
+        "options": { "timeout": 290000 }
+      },
+      "id": "33dcfbfb-8090-4db6-a389-6c828d610f9a",
+      "name": "Bridge Scrape Specials",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-380, 300],
+      "credentials": { "httpHeaderAuth": { "id": "Eg83ctL4osyXjKdT", "name": "Budget Bridge Token" } }
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": { "main": [[{ "node": "Bridge Scrape Specials", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1", "timezone": "Africa/Johannesburg" },
+  "id": "scrape-specials-manual"
+}
