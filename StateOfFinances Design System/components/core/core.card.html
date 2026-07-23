@@ -1,0 +1,58 @@
+<!-- @dsCard group="Components" viewport="700x390" name="Core" subtitle="Button · Badge · Card · Input · FilterChip · PillPicker" -->
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>body{margin:0;padding:20px;background:var(--bg);display:flex;flex-direction:column;gap:18px}input::placeholder{color:var(--text-muted)}.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.label{font-family:var(--font-mono);font-size:.5625rem;color:var(--text-muted);margin:0 0 6px}</style>
+</head><body>
+<div id="root"></div>
+<script type="text/babel">
+const {Button,Badge,Card,Input,FilterChip,PillPicker} = window.StateOfFinancesDesignSystem_135bac;
+function Demo() {
+  const [chip, setChip] = React.useState('All');
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:20}}>
+      <div>
+        <p class="label">Button — variants</p>
+        <div class="row">
+          <Button variant="primary"   size="sm">Primary</Button>
+          <Button variant="secondary" size="sm">Secondary</Button>
+          <Button variant="ghost"     size="sm">Ghost</Button>
+          <Button variant="danger"    size="sm">Danger</Button>
+          <Button variant="income"    size="sm">Income ↑</Button>
+          <Button variant="primary"   size="sm" disabled>Disabled</Button>
+        </div>
+      </div>
+      <div>
+        <p class="label">Badge — circle / rounded · sm / md / lg</p>
+        <div class="row">
+          <Badge label="Groceries"     colorIndex={0} size="sm" />
+          <Badge label="Petrol"        colorIndex={1} size="md" />
+          <Badge label="Subscriptions" colorIndex={2} size="lg" />
+          <Badge label="Rent"          colorIndex={3} size="lg" shape="rounded" />
+        </div>
+      </div>
+      <div>
+        <p class="label">Input — with leading slot</p>
+        <Input placeholder="Search transactions…" leadingSlot={<span style={{fontSize:14}}>🔍</span>} />
+      </div>
+      <div>
+        <p class="label">FilterChip — active / inactive</p>
+        <div class="row">
+          {['All','Groceries','Petrol','Subscriptions','Rent'].map(c=>(
+            <FilterChip key={c} label={c} active={chip===c} onClick={()=>setChip(c)} />
+          ))}
+        </div>
+      </div>
+      <div>
+        <p class="label">PillPicker — time range</p>
+        <PillPicker />
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<Demo />);
+</script>
+</body></html>

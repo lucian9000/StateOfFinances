@@ -2,16 +2,75 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Design tokens — StateOfFinances Design System (see the "StateOfFinances Design
+ * System" folder at the repo root). Full token set; the app previously exposed
+ * only the core colours. Font tokens bridge the DS names to the next/font CSS
+ * variables set in layout.tsx, so we keep next/font (no Google Fonts @import).
+ */
 :root {
+  /* Backgrounds — layered dark-purple system */
   --bg: #120e1f;
   --surface: #1e1830;
   --surface-raised: #28203f;
+
+  /* Semantic accents */
   --violet: #8b5cf6;
   --magenta: #e64fcc;
   --cyan: #22d3ee;
   --amber: #f5a623;
+
+  /* Text */
   --text: #f5f3fa;
   --text-muted: #9c93b5;
+
+  /* Semantic aliases */
+  --color-primary: var(--violet);
+  --color-income: var(--cyan);   /* positive amounts */
+  --color-spend: var(--magenta); /* spend / negative amounts */
+  --color-savings: var(--amber);
+  --color-goals: var(--amber);
+
+  /* Alpha tints — icon-badge well backgrounds */
+  --violet-10: rgb(139 92 246 / 0.10);
+  --violet-20: rgb(139 92 246 / 0.20);
+  --magenta-20: rgb(230 79 204 / 0.20);
+  --cyan-20: rgb(34 211 238 / 0.20);
+  --amber-20: rgb(245 166 35 / 0.20);
+
+  /* Category palette — cycles 0–3 for ordered category lists */
+  --category-0: #8b5cf6;
+  --category-1: #e64fcc;
+  --category-2: #22d3ee;
+  --category-3: #f5a623;
+
+  /* Fonts — bridge DS names to next/font vars (layout.tsx) */
+  --font-display: var(--font-space-grotesk), sans-serif;
+  --font-body: var(--font-inter), sans-serif;
+  --font-mono: var(--font-jetbrains-mono), monospace;
+
+  /* Border radii */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-card: 24px;
+  --radius-full: 9999px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.40);
+  --shadow-card: 0 10px 15px -3px rgb(139 92 246 / 0.10), 0 4px 6px -4px rgb(139 92 246 / 0.10);
+  --shadow-glow-violet: 0 0 20px rgb(139 92 246 / 0.30);
+  --shadow-glow-cyan: 0 0 20px rgb(34 211 238 / 0.25);
+  --shadow-glow-magenta: 0 0 20px rgb(230 79 204 / 0.25);
+
+  /* Gradients */
+  --gradient-hero: linear-gradient(135deg, var(--surface-raised) 0%, rgb(139 92 246 / 0.20) 100%);
+  --gradient-violet: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+
+  /* Transitions */
+  --transition-fast: 150ms ease;
+  --transition-normal: 250ms ease;
 }
 
 body {

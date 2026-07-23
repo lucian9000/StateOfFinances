@@ -1,0 +1,36 @@
+:root {
+  /* Backgrounds — layered dark-purple system */
+  --bg: #120e1f;
+  --surface: #1e1830;
+  --surface-raised: #28203f;
+
+  /* Semantic accents */
+  --violet: #8b5cf6;
+  --magenta: #e64fcc;
+  --cyan: #22d3ee;
+  --amber: #f5a623;
+
+  /* Text */
+  --text: #f5f3fa;
+  --text-muted: #9c93b5;
+
+  /* Semantic aliases */
+  --color-primary: var(--violet);
+  --color-income: var(--cyan);
+  --color-spend: var(--magenta);
+  --color-savings: var(--amber);
+  --color-goals: var(--amber);
+
+  /* Alpha tints — icon badge well backgrounds */
+  --violet-10: rgb(139 92 246 / 0.10);
+  --violet-20: rgb(139 92 246 / 0.20);
+  --magenta-20: rgb(230 79 204 / 0.20);
+  --cyan-20: rgb(34 211 238 / 0.20);
+  --amber-20: rgb(245 166 35 / 0.20);
+
+  /* Category palette — cycles 0–3 for ordered category lists */
+  --category-0: #8b5cf6;
+  --category-1: #e64fcc;
+  --category-2: #22d3ee;
+  --category-3: #f5a623;
+}

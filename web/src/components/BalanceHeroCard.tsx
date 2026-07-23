@@ -12,7 +12,7 @@ export function BalanceHeroCard({
   profit: number;
 }) {
   return (
-    <div className="rounded-card bg-gradient-to-br from-surface-raised to-violet/20 p-6 shadow-lg shadow-violet/10">
+    <div className="rounded-card bg-hero p-6 shadow-card">
       <p className="text-sm text-text-muted">My Balance</p>
       <p className="mt-1 font-display text-4xl font-semibold">
         <span className="text-text-muted">R </span>
