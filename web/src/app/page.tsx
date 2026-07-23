@@ -97,6 +97,14 @@ export default async function OverviewPage({
         View all transactions
         <ChevronRight size={18} />
       </Link>
+
+      <Link
+        href="/grocery"
+        className="flex items-center justify-between rounded-card bg-surface px-4 py-3 text-sm font-medium text-text-muted transition hover:text-text"
+      >
+        Grocery list
+        <ChevronRight size={18} />
+      </Link>
     </main>
   );
 }

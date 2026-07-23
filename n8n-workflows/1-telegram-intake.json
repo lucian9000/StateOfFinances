@@ -421,6 +421,66 @@
     },
     {
       "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "conditions": [
+            { "id": "4007f902-69ff-4153-8660-b1ccf5d23b7e", "leftValue": "={{ $('Bridge Classify (Photo)').item.json.category_id }}", "rightValue": 8, "operator": { "type": "number", "operation": "equals" } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "4a5e0328-2e39-47af-a0f8-a449f9efec97",
+      "name": "Is Groceries? (Photo)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1480, 620]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://172.18.0.1:8790/reconcile",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ transaction_id: $('Insert Transaction (Photo Confident)').item.json.id, line_items: ($('Bridge OCR').item.json.line_items || []) }) }}",
+        "options": { "timeout": 120000 }
+      },
+      "id": "0668c67e-5c1a-458b-ac85-3b383042a7ff",
+      "name": "Bridge Reconcile (Photo)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1700, 620],
+      "credentials": { "httpHeaderAuth": { "id": "Eg83ctL4osyXjKdT", "name": "Budget Bridge Token" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const r = $json;\nconst lines = [];\nif (r.reconciled && r.reconciled.length) {\n  lines.push('✅ Ticked off your grocery list:');\n  for (const x of r.reconciled) lines.push(`  • ${x.item_name}${x.actual_price != null ? ' — R' + Number(x.actual_price).toFixed(2) : ''}`);\n}\nif (r.uncertain && r.uncertain.length) {\n  for (const u of r.uncertain) lines.push(`❓ Slip had \"${u.ocr_text}\" — maybe \"${u.candidate_item_name}\"? Not sure, so I left it on the list. Tick it on the dashboard if that's it.`);\n}\nif (lines.length === 0) return [];\nreturn [{ json: { message: lines.join('\\n') } }];"
+      },
+      "id": "6fef944f-d0e8-475f-94dd-09b182008132",
+      "name": "Format Reconcile (Photo)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1920, 620]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $('Build Classify Input (Photo)').item.json.chatId }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": { "appendAttribution": false }
+      },
+      "id": "24ccd63a-43b5-4c74-a269-395d6571e7f3",
+      "name": "Send Reconcile Reply (Photo)",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [2140, 620],
+      "credentials": { "telegramApi": { "id": "6wsBoDN4TWeIFvgr", "name": "Budget Telegram Bot" } }
+    },
+    {
+      "parameters": {
         "jsCode": "const route = $json;\n// Same rule as \"Route Message\": a line only counts as an expense line when\n// the amount is the LAST thing on it, not just any digit anywhere - keeps\n// this split consistent with the routing decision that got us here.\nconst amountLinePattern = /\\bR?\\s?\\d+(\\.\\d{1,2})?\\.?\\s*$/i;\nconst lines = route.text.split('\\n').map((l) => l.trim()).filter(Boolean);\nconst expenseLines = lines.filter((l) => amountLinePattern.test(l));\n// Multi-line messages (\"log these: ...\") become one item per expense line,\n// so each gets its own classify + insert + confirmation instead of the\n// whole message being crammed into a single transaction. Single-line\n// messages behave exactly as before (one line in, one item out).\nconst sourceLines = expenseLines.length ? expenseLines : [route.text];\n\nreturn sourceLines.map((line) => {\n  const amountMatch = line.match(/\\d+(\\.\\d+)?/);\n  return {\n    json: {\n      text: line,\n      amount: amountMatch ? parseFloat(amountMatch[0]) : null,\n      date: null,\n      raw_ocr_text: null,\n      chatId: route.chatId,\n      messageId: route.messageId,\n      source: 'manual',\n    },\n  };\n});"
       },
       "id": "c28322ec-4c20-4207-a8e0-e58a353526bb",
@@ -1055,6 +1115,45 @@
         [
           {
             "node": "Confirm Logged (Photo Confident)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Is Groceries? (Photo)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Groceries? (Photo)": {
+      "main": [
+        [
+          {
+            "node": "Bridge Reconcile (Photo)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Bridge Reconcile (Photo)": {
+      "main": [
+        [
+          {
+            "node": "Format Reconcile (Photo)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Reconcile (Photo)": {
+      "main": [
+        [
+          {
+            "node": "Send Reconcile Reply (Photo)",
             "type": "main",
             "index": 0
           }

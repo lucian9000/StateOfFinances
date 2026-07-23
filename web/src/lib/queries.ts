@@ -208,3 +208,98 @@ export async function getCategoryList(): Promise<{ id: number; name: string }[]>
   );
   return res.rows;
 }
+
+// ─── Grocery List (StateOfGroceries) ─────────────────────────────────────────
+
+export interface GrocerySpecial {
+  store: string;
+  itemKeyword: string;
+  price: number | null;
+  validUntil: string | null;
+  asOf: string; // "prices as of" date, always present
+}
+
+export interface GroceryItem {
+  id: number;
+  itemName: string;
+  quantity: string;
+  requestedByName: string | null;
+  estimatedPrice: number | null;
+  special: GrocerySpecial | null;
+}
+
+export interface GroceryData {
+  items: GroceryItem[];
+  projected: {
+    budget: number | null;
+    boughtThisMonth: number;
+    pendingEstimate: number;
+    remaining: number | null; // null when no budget set
+  };
+}
+
+/**
+ * Pending grocery list + each item's best specials match + the projected-remaining
+ * figure (same calc as the bot: Groceries budget_amount − bought-this-month −
+ * pending-at-estimate). Bought items drop off this view (history stays in the table).
+ */
+export async function getGroceryData(): Promise<GroceryData> {
+  const [itemsRes, calcRes] = await Promise.all([
+    pool.query(
+      `SELECT gi.id, gi.item_name, gi.quantity, gi.requested_by_name, gi.estimated_price,
+              sp.store, sp.item_keyword, sp.price AS sp_price, sp.valid_until,
+              to_char(sp.scraped_at, 'YYYY-MM-DD') AS sp_as_of
+       FROM grocery_items gi
+       LEFT JOIN LATERAL (
+         SELECT store, item_keyword, price, valid_until, scraped_at
+         FROM specials s
+         WHERE gi.item_name ILIKE '%' || s.item_keyword || '%'
+            OR s.item_keyword ILIKE '%' || gi.item_name || '%'
+            OR similarity(s.item_keyword, gi.item_name) > 0.3
+         ORDER BY similarity(s.item_keyword, gi.item_name) DESC
+         LIMIT 1
+       ) sp ON true
+       WHERE gi.status = 'pending'
+       ORDER BY gi.created_at`
+    ),
+    pool.query<{ budget: string | null; bought: string; pending_est: string }>(
+      `SELECT (SELECT budget_amount FROM categories WHERE id = 8) AS budget,
+         COALESCE((SELECT SUM(actual_price) FROM grocery_items
+                   WHERE status = 'bought' AND bought_at >= date_trunc('month', CURRENT_DATE)), 0) AS bought,
+         COALESCE((SELECT SUM(estimated_price) FROM grocery_items
+                   WHERE status = 'pending' AND created_at >= date_trunc('month', CURRENT_DATE)), 0) AS pending_est`
+    ),
+  ]);
+
+  const items: GroceryItem[] = itemsRes.rows.map((r) => ({
+    id: r.id,
+    itemName: r.item_name,
+    quantity: r.quantity,
+    requestedByName: r.requested_by_name,
+    estimatedPrice: r.estimated_price != null ? parseFloat(r.estimated_price) : null,
+    special: r.store
+      ? {
+          store: r.store,
+          itemKeyword: r.item_keyword,
+          price: r.sp_price != null ? parseFloat(r.sp_price) : null,
+          validUntil: r.valid_until ? toDateOnlyString(r.valid_until) : null,
+          asOf: r.sp_as_of,
+        }
+      : null,
+  }));
+
+  const c = calcRes.rows[0];
+  const budget = c.budget != null ? parseFloat(c.budget) : null;
+  const boughtThisMonth = parseFloat(c.bought);
+  const pendingEstimate = parseFloat(c.pending_est);
+
+  return {
+    items,
+    projected: {
+      budget,
+      boughtThisMonth,
+      pendingEstimate,
+      remaining: budget != null ? budget - boughtThisMonth - pendingEstimate : null,
+    },
+  };
+}
