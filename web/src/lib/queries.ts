@@ -49,9 +49,21 @@ export async function getOverview(range: TimeRange): Promise<OverviewData> {
 
   const [balanceRes, spendRes, incomeRes, categoryRes] = await Promise.all([
     pool.query<{ balance: string }>(
-      `SELECT
-         COALESCE((SELECT SUM(confirmed_zar) FROM income WHERE confirmed_zar IS NOT NULL), 0)
-         - COALESCE((SELECT SUM(amount) FROM transactions), 0) AS balance`
+      `WITH latest_snapshot AS (
+         SELECT amount, created_at FROM balance_snapshots ORDER BY created_at DESC LIMIT 1
+       )
+       SELECT
+         COALESCE((SELECT amount FROM latest_snapshot), 0)
+         + COALESCE((
+             SELECT SUM(confirmed_zar) FROM income
+             WHERE confirmed_zar IS NOT NULL
+               AND created_at > COALESCE((SELECT created_at FROM latest_snapshot), '-infinity'::timestamptz)
+           ), 0)
+         - COALESCE((
+             SELECT SUM(amount) FROM transactions
+             WHERE created_at > COALESCE((SELECT created_at FROM latest_snapshot), '-infinity'::timestamptz)
+           ), 0)
+         AS balance`
     ),
     pool.query<{ spend: string }>(
       `SELECT COALESCE(SUM(amount), 0) AS spend

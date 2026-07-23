@@ -3,16 +3,24 @@
   "nodes": [
     {
       "parameters": {
-        "updates": ["message"]
+        "updates": [
+          "message"
+        ]
       },
       "id": "5c0163b6-5678-4f21-8487-81401a2af618",
       "name": "Telegram Trigger",
       "type": "n8n-nodes-base.telegramTrigger",
       "typeVersion": 1.1,
-      "position": [-1400, 300],
+      "position": [
+        -1400,
+        300
+      ],
       "webhookId": "budget-telegram-intake",
       "credentials": {
-        "telegramApi": { "id": "6wsBoDN4TWeIFvgr", "name": "Budget Telegram Bot" }
+        "telegramApi": {
+          "id": "6wsBoDN4TWeIFvgr",
+          "name": "Budget Telegram Bot"
+        }
       }
     },
     {
@@ -25,32 +33,49 @@
       "name": "Get Pending Income",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
-      "position": [-1180, 300],
+      "position": [
+        -1180,
+        300
+      ],
       "alwaysOutputData": true,
       "credentials": {
-        "postgres": { "id": "syWj4Ccfmwep9ePX", "name": "Budget Postgres" }
+        "postgres": {
+          "id": "syWj4Ccfmwep9ePX",
+          "name": "Budget Postgres"
+        }
       }
     },
     {
       "parameters": {
-        "jsCode": "const trig = $('Telegram Trigger').item.json;\nconst msg = trig.message || {};\nconst pendingItems = $input.all();\nconst pending = (pendingItems.length && pendingItems[0].json && pendingItems[0].json.id) ? pendingItems[0].json : null;\n\nconst text = (msg.text || '').trim();\nconst hasPhoto = Array.isArray(msg.photo) && msg.photo.length > 0;\nconst numMatch = text.replace(/^[Rr]\\s*/, '').match(/^\\d+(\\.\\d+)?$/);\nconst anyNumber = text.match(/\\d+(\\.\\d+)?/);\n\n// chat is the default: anything that isn't an income reply, a photo,\n// or a text containing an amount goes to the OpenClaw agent for a\n// conversational reply instead of being force-parsed as a transaction.\nlet route = 'chat';\nif (pending && numMatch) {\n  route = 'income';\n} else if (hasPhoto) {\n  route = 'photo';\n} else if (anyNumber) {\n  route = 'text';\n}\n\nreturn [{\n  json: {\n    route,\n    chatId: msg.chat.id,\n    messageId: msg.message_id,\n    text,\n    pendingIncomeId: pending ? pending.id : null,\n    pendingIncomeType: pending ? pending.type : null,\n    incomeAmount: numMatch ? parseFloat(numMatch[0]) : null,\n    photoFileId: hasPhoto ? msg.photo[msg.photo.length - 1].file_id : null,\n  }\n}];"
+        "jsCode": "const trig = $('Telegram Trigger').item.json;\nconst msg = trig.message || {};\nconst pendingItems = $input.all();\nconst pending = (pendingItems.length && pendingItems[0].json && pendingItems[0].json.id) ? pendingItems[0].json : null;\n\nconst text = (msg.text || '').trim();\nconst hasPhoto = Array.isArray(msg.photo) && msg.photo.length > 0;\nconst numMatch = text.replace(/^[Rr]\\s*/, '').match(/^\\d+(\\.\\d+)?$/);\n// A line only counts as \"reporting an amount\" when the amount is the LAST\n// thing on that line (optionally R-prefixed, optionally one trailing '.').\n// Deliberately stricter than \"contains a digit anywhere\" - a conversational\n// message like \"you added 2 transactions, that's wrong\" contains digits too,\n// but the amount isn't the point of the sentence, and force-routing it to\n// transaction-logging silently created garbage rows (real incident).\nconst amountLinePattern = /\\bR?\\s?\\d+(\\.\\d{1,2})?\\.?\\s*$/i;\nconst anyNumber = text.split('\\n').some((line) => amountLinePattern.test(line.trim()));\nconst isBalance = /\\bbalance\\b/i.test(text);\n\n// chat is the default: anything that isn't an income reply, a photo,\n// a balance statement, or a text ending a line with an amount goes to the\n// OpenClaw agent for a conversational reply instead of being force-parsed\n// as a transaction.\nlet route = 'chat';\nif (pending && numMatch) {\n  route = 'income';\n} else if (hasPhoto) {\n  route = 'photo';\n} else if (isBalance && anyNumber) {\n  route = 'balance';\n} else if (anyNumber) {\n  route = 'text';\n}\n\nreturn [{\n  json: {\n    route,\n    chatId: msg.chat.id,\n    messageId: msg.message_id,\n    text,\n    pendingIncomeId: pending ? pending.id : null,\n    pendingIncomeType: pending ? pending.type : null,\n    incomeAmount: numMatch ? parseFloat(numMatch[0]) : null,\n    photoFileId: hasPhoto ? msg.photo[msg.photo.length - 1].file_id : null,\n  }\n}];"
       },
       "id": "ee91187c-5191-4d5b-9fbc-06a33f71e59c",
       "name": "Route Message",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-960, 300]
+      "position": [
+        -960,
+        300
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
           "conditions": [
             {
               "id": "949fd1cc-d586-4ca3-bd4a-ea904fdda811",
               "leftValue": "={{ $json.route }}",
               "rightValue": "income",
-              "operator": { "type": "string", "operation": "equals" }
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
             }
           ],
           "combinator": "and"
@@ -61,7 +86,10 @@
       "name": "Is Income Reply?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [-740, 300]
+      "position": [
+        -740,
+        300
+      ]
     },
     {
       "parameters": {
@@ -75,9 +103,15 @@
       "name": "Confirm Income",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
-      "position": [-500, 140],
+      "position": [
+        -500,
+        140
+      ],
       "credentials": {
-        "postgres": { "id": "syWj4Ccfmwep9ePX", "name": "Budget Postgres" }
+        "postgres": {
+          "id": "syWj4Ccfmwep9ePX",
+          "name": "Budget Postgres"
+        }
       }
     },
     {
@@ -85,16 +119,24 @@
         "resource": "message",
         "operation": "sendMessage",
         "chatId": "={{ $('Route Message').item.json.chatId }}",
-        "text": "=Got it — R{{ $('Route Message').item.json.incomeAmount }} logged for your {{ $('Route Message').item.json.pendingIncomeType }} pay. Recalculating your weekly budget now.",
-        "additionalFields": { "appendAttribution": false }
+        "text": "=Got it \u2014 R{{ $('Route Message').item.json.incomeAmount }} logged for your {{ $('Route Message').item.json.pendingIncomeType }} pay. Recalculating your weekly budget now.",
+        "additionalFields": {
+          "appendAttribution": false
+        }
       },
       "id": "d475c2f0-7aeb-44c6-9c74-ad289658bcc8",
       "name": "Confirm Income Reply",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
-      "position": [-280, 140],
+      "position": [
+        -280,
+        140
+      ],
       "credentials": {
-        "telegramApi": { "id": "6wsBoDN4TWeIFvgr", "name": "Budget Telegram Bot" }
+        "telegramApi": {
+          "id": "6wsBoDN4TWeIFvgr",
+          "name": "Budget Telegram Bot"
+        }
       }
     },
     {
@@ -111,18 +153,29 @@
       "name": "Trigger Weekly Budget Calc",
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1.2,
-      "position": [-60, 140]
+      "position": [
+        -60,
+        140
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
           "conditions": [
             {
               "id": "38309bdd-4364-446c-8c94-c09591f6704a",
               "leftValue": "={{ $json.route }}",
               "rightValue": "photo",
-              "operator": { "type": "string", "operation": "equals" }
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
             }
           ],
           "combinator": "and"
@@ -133,7 +186,10 @@
       "name": "Has Photo?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [-500, 460]
+      "position": [
+        -500,
+        460
+      ]
     },
     {
       "parameters": {
@@ -144,9 +200,15 @@
       "name": "Download Receipt File",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
-      "position": [-280, 400],
+      "position": [
+        -280,
+        400
+      ],
       "credentials": {
-        "telegramApi": { "id": "6wsBoDN4TWeIFvgr", "name": "Budget Telegram Bot" }
+        "telegramApi": {
+          "id": "6wsBoDN4TWeIFvgr",
+          "name": "Budget Telegram Bot"
+        }
       }
     },
     {
@@ -157,7 +219,10 @@
       "name": "Encode Base64",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-60, 400]
+      "position": [
+        -60,
+        400
+      ]
     },
     {
       "parameters": {
@@ -174,9 +239,15 @@
       "name": "Bridge OCR",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [160, 400],
+      "position": [
+        160,
+        400
+      ],
       "credentials": {
-        "httpHeaderAuth": { "id": "Eg83ctL4osyXjKdT", "name": "Budget Bridge Token" }
+        "httpHeaderAuth": {
+          "id": "Eg83ctL4osyXjKdT",
+          "name": "Budget Bridge Token"
+        }
       }
     },
     {
@@ -187,7 +258,10 @@
       "name": "Build Classify Input (Photo)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [380, 400]
+      "position": [
+        380,
+        400
+      ]
     },
     {
       "parameters": {
@@ -204,21 +278,36 @@
       "name": "Bridge Classify (Photo)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [600, 400],
+      "position": [
+        600,
+        400
+      ],
       "credentials": {
-        "httpHeaderAuth": { "id": "Eg83ctL4osyXjKdT", "name": "Budget Bridge Token" }
+        "httpHeaderAuth": {
+          "id": "Eg83ctL4osyXjKdT",
+          "name": "Budget Bridge Token"
+        }
       }
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
           "conditions": [
             {
               "id": "15b32256-5b74-4671-b33f-c9c2e4c0e59e",
               "leftValue": "={{ $json.needs_confirmation }}",
               "rightValue": true,
-              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
             }
           ],
           "combinator": "and"
@@ -229,7 +318,10 @@
       "name": "Needs Confirmation? (Photo)",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [820, 400]
+      "position": [
+        820,
+        400
+      ]
     },
     {
       "parameters": {
@@ -243,9 +335,15 @@
       "name": "Insert Transaction (Photo Unsure)",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
-      "position": [1040, 300],
+      "position": [
+        1040,
+        300
+      ],
       "credentials": {
-        "postgres": { "id": "syWj4Ccfmwep9ePX", "name": "Budget Postgres" }
+        "postgres": {
+          "id": "syWj4Ccfmwep9ePX",
+          "name": "Budget Postgres"
+        }
       }
     },
     {
@@ -253,16 +351,24 @@
         "resource": "message",
         "operation": "sendMessage",
         "chatId": "={{ $('Build Classify Input (Photo)').item.json.chatId }}",
-        "text": "=Logged R{{ $('Build Classify Input (Photo)').item.json.amount }} as uncategorized for now — closest guess: {{ $json.category_name || $json.suggested_category_name || 'none' }}. Reply with the right category and I'll remember it for next time.",
-        "additionalFields": { "appendAttribution": false }
+        "text": "=Logged R{{ $('Build Classify Input (Photo)').item.json.amount }} as uncategorized for now \u2014 closest guess: {{ $('Bridge Classify (Photo)').item.json.category_name || $('Bridge Classify (Photo)').item.json.suggested_category_name || 'none' }}. Reply with the right category and I'll remember it for next time.",
+        "additionalFields": {
+          "appendAttribution": false
+        }
       },
       "id": "8d47ef31-29eb-411b-951e-1ddeea0f4b50",
       "name": "Ask Category (Photo Unsure)",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
-      "position": [1260, 300],
+      "position": [
+        1260,
+        300
+      ],
       "credentials": {
-        "telegramApi": { "id": "6wsBoDN4TWeIFvgr", "name": "Budget Telegram Bot" }
+        "telegramApi": {
+          "id": "6wsBoDN4TWeIFvgr",
+          "name": "Budget Telegram Bot"
+        }
       }
     },
     {
@@ -277,9 +383,15 @@
       "name": "Insert Transaction (Photo Confident)",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
-      "position": [1040, 500],
+      "position": [
+        1040,
+        500
+      ],
       "credentials": {
-        "postgres": { "id": "syWj4Ccfmwep9ePX", "name": "Budget Postgres" }
+        "postgres": {
+          "id": "syWj4Ccfmwep9ePX",
+          "name": "Budget Postgres"
+        }
       }
     },
     {
@@ -287,27 +399,38 @@
         "resource": "message",
         "operation": "sendMessage",
         "chatId": "={{ $('Build Classify Input (Photo)').item.json.chatId }}",
-        "text": "=Logged R{{ $('Build Classify Input (Photo)').item.json.amount }} under {{ $json.category_name }}.",
-        "additionalFields": { "appendAttribution": false }
+        "text": "=Logged R{{ $('Build Classify Input (Photo)').item.json.amount }} under {{ $('Bridge Classify (Photo)').item.json.category_name }}.",
+        "additionalFields": {
+          "appendAttribution": false
+        }
       },
       "id": "2e375aae-dccf-4fa1-8ef1-4409332cf078",
       "name": "Confirm Logged (Photo Confident)",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
-      "position": [1260, 500],
+      "position": [
+        1260,
+        500
+      ],
       "credentials": {
-        "telegramApi": { "id": "6wsBoDN4TWeIFvgr", "name": "Budget Telegram Bot" }
+        "telegramApi": {
+          "id": "6wsBoDN4TWeIFvgr",
+          "name": "Budget Telegram Bot"
+        }
       }
     },
     {
       "parameters": {
-        "jsCode": "const route = $json;\nconst amountMatch = route.text.match(/\\d+(\\.\\d+)?/);\nreturn [{\n  json: {\n    text: route.text,\n    amount: amountMatch ? parseFloat(amountMatch[0]) : null,\n    date: null,\n    raw_ocr_text: null,\n    chatId: route.chatId,\n    messageId: route.messageId,\n    source: 'manual',\n  }\n}];"
+        "jsCode": "const route = $json;\n// Same rule as \"Route Message\": a line only counts as an expense line when\n// the amount is the LAST thing on it, not just any digit anywhere - keeps\n// this split consistent with the routing decision that got us here.\nconst amountLinePattern = /\\bR?\\s?\\d+(\\.\\d{1,2})?\\.?\\s*$/i;\nconst lines = route.text.split('\\n').map((l) => l.trim()).filter(Boolean);\nconst expenseLines = lines.filter((l) => amountLinePattern.test(l));\n// Multi-line messages (\"log these: ...\") become one item per expense line,\n// so each gets its own classify + insert + confirmation instead of the\n// whole message being crammed into a single transaction. Single-line\n// messages behave exactly as before (one line in, one item out).\nconst sourceLines = expenseLines.length ? expenseLines : [route.text];\n\nreturn sourceLines.map((line) => {\n  const amountMatch = line.match(/\\d+(\\.\\d+)?/);\n  return {\n    json: {\n      text: line,\n      amount: amountMatch ? parseFloat(amountMatch[0]) : null,\n      date: null,\n      raw_ocr_text: null,\n      chatId: route.chatId,\n      messageId: route.messageId,\n      source: 'manual',\n    },\n  };\n});"
       },
       "id": "c28322ec-4c20-4207-a8e0-e58a353526bb",
       "name": "Build Classify Input (Text)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-280, 660]
+      "position": [
+        -280,
+        660
+      ]
     },
     {
       "parameters": {
@@ -324,21 +447,36 @@
       "name": "Bridge Classify (Text)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [-60, 660],
+      "position": [
+        -60,
+        660
+      ],
       "credentials": {
-        "httpHeaderAuth": { "id": "Eg83ctL4osyXjKdT", "name": "Budget Bridge Token" }
+        "httpHeaderAuth": {
+          "id": "Eg83ctL4osyXjKdT",
+          "name": "Budget Bridge Token"
+        }
       }
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
           "conditions": [
             {
               "id": "aae046f9-e4ab-4eba-9aa8-a3c3cc086cad",
               "leftValue": "={{ $json.needs_confirmation }}",
               "rightValue": true,
-              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
             }
           ],
           "combinator": "and"
@@ -349,7 +487,10 @@
       "name": "Needs Confirmation? (Text)",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [160, 660]
+      "position": [
+        160,
+        660
+      ]
     },
     {
       "parameters": {
@@ -363,9 +504,15 @@
       "name": "Insert Transaction (Text Unsure)",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
-      "position": [380, 560],
+      "position": [
+        380,
+        560
+      ],
       "credentials": {
-        "postgres": { "id": "syWj4Ccfmwep9ePX", "name": "Budget Postgres" }
+        "postgres": {
+          "id": "syWj4Ccfmwep9ePX",
+          "name": "Budget Postgres"
+        }
       }
     },
     {
@@ -373,16 +520,24 @@
         "resource": "message",
         "operation": "sendMessage",
         "chatId": "={{ $('Build Classify Input (Text)').item.json.chatId }}",
-        "text": "=Logged R{{ $('Build Classify Input (Text)').item.json.amount }} as uncategorized for now — closest guess: {{ $json.category_name || $json.suggested_category_name || 'none' }}. Reply with the right category and I'll remember it for next time.",
-        "additionalFields": { "appendAttribution": false }
+        "text": "=Logged R{{ $('Build Classify Input (Text)').item.json.amount }} as uncategorized for now \u2014 closest guess: {{ $('Bridge Classify (Text)').item.json.category_name || $('Bridge Classify (Text)').item.json.suggested_category_name || 'none' }}. Reply with the right category and I'll remember it for next time.",
+        "additionalFields": {
+          "appendAttribution": false
+        }
       },
       "id": "c20f557d-42a4-4641-a9b9-baaf424a2830",
       "name": "Ask Category (Text Unsure)",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
-      "position": [600, 560],
+      "position": [
+        600,
+        560
+      ],
       "credentials": {
-        "telegramApi": { "id": "6wsBoDN4TWeIFvgr", "name": "Budget Telegram Bot" }
+        "telegramApi": {
+          "id": "6wsBoDN4TWeIFvgr",
+          "name": "Budget Telegram Bot"
+        }
       }
     },
     {
@@ -397,9 +552,15 @@
       "name": "Insert Transaction (Text Confident)",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
-      "position": [380, 760],
+      "position": [
+        380,
+        760
+      ],
       "credentials": {
-        "postgres": { "id": "syWj4Ccfmwep9ePX", "name": "Budget Postgres" }
+        "postgres": {
+          "id": "syWj4Ccfmwep9ePX",
+          "name": "Budget Postgres"
+        }
       }
     },
     {
@@ -407,28 +568,44 @@
         "resource": "message",
         "operation": "sendMessage",
         "chatId": "={{ $('Build Classify Input (Text)').item.json.chatId }}",
-        "text": "=Logged R{{ $('Build Classify Input (Text)').item.json.amount }} under {{ $json.category_name }}.",
-        "additionalFields": { "appendAttribution": false }
+        "text": "=Logged R{{ $('Build Classify Input (Text)').item.json.amount }} under {{ $('Bridge Classify (Text)').item.json.category_name }}.",
+        "additionalFields": {
+          "appendAttribution": false
+        }
       },
       "id": "b0a32429-d1b3-421b-a99a-421749e1045a",
       "name": "Confirm Logged (Text Confident)",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
-      "position": [600, 760],
+      "position": [
+        600,
+        760
+      ],
       "credentials": {
-        "telegramApi": { "id": "6wsBoDN4TWeIFvgr", "name": "Budget Telegram Bot" }
+        "telegramApi": {
+          "id": "6wsBoDN4TWeIFvgr",
+          "name": "Budget Telegram Bot"
+        }
       }
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
           "conditions": [
             {
               "id": "e7984ae7-e30a-4d46-bb9e-ef073906fc45",
               "leftValue": "={{ $json.route }}",
               "rightValue": "chat",
-              "operator": { "type": "string", "operation": "equals" }
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
             }
           ],
           "combinator": "and"
@@ -439,7 +616,10 @@
       "name": "Is Chat?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [-280, 880]
+      "position": [
+        -280,
+        880
+      ]
     },
     {
       "parameters": {
@@ -450,15 +630,23 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ text: $json.text, chat_id: String($json.chatId) }) }}",
-        "options": { "timeout": 240000 }
+        "options": {
+          "timeout": 240000
+        }
       },
       "id": "2b4435b6-19eb-42a2-8b63-53b5258c0a6d",
       "name": "Bridge Chat",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [-60, 940],
+      "position": [
+        -60,
+        940
+      ],
       "credentials": {
-        "httpHeaderAuth": { "id": "Eg83ctL4osyXjKdT", "name": "Budget Bridge Token" }
+        "httpHeaderAuth": {
+          "id": "Eg83ctL4osyXjKdT",
+          "name": "Budget Bridge Token"
+        }
       }
     },
     {
@@ -467,27 +655,43 @@
         "operation": "sendMessage",
         "chatId": "={{ $('Route Message').item.json.chatId }}",
         "text": "={{ $json.reply }}",
-        "additionalFields": { "appendAttribution": false }
+        "additionalFields": {
+          "appendAttribution": false
+        }
       },
       "id": "80384987-8612-4e5c-b690-cb7f0eaa5d1d",
       "name": "Send Chat Reply",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
-      "position": [160, 940],
+      "position": [
+        160,
+        940
+      ],
       "credentials": {
-        "telegramApi": { "id": "6wsBoDN4TWeIFvgr", "name": "Budget Telegram Bot" }
+        "telegramApi": {
+          "id": "6wsBoDN4TWeIFvgr",
+          "name": "Budget Telegram Bot"
+        }
       }
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
           "conditions": [
             {
               "id": "51973134-695b-4378-9fd2-926cd154fcf3",
               "leftValue": "={{ $json.amount }}",
               "rightValue": 0,
-              "operator": { "type": "number", "operation": "gt" }
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
             }
           ],
           "combinator": "and"
@@ -498,7 +702,10 @@
       "name": "Has Amount? (Photo)",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [490, 400]
+      "position": [
+        490,
+        400
+      ]
     },
     {
       "parameters": {
@@ -506,74 +713,460 @@
         "operation": "sendMessage",
         "chatId": "={{ $('Route Message').item.json.chatId }}",
         "text": "Couldn't read an amount off that slip. Type it instead, e.g. \"checkers 450\".",
-        "additionalFields": { "appendAttribution": false }
+        "additionalFields": {
+          "appendAttribution": false
+        }
       },
       "id": "d722cead-033e-49f3-9e98-119d433f392f",
       "name": "Ask Amount (Photo)",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
-      "position": [710, 240],
+      "position": [
+        710,
+        240
+      ],
       "credentials": {
-        "telegramApi": { "id": "6wsBoDN4TWeIFvgr", "name": "Budget Telegram Bot" }
+        "telegramApi": {
+          "id": "6wsBoDN4TWeIFvgr",
+          "name": "Budget Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "13a803af-6378-400c-a249-06755141cada",
+              "leftValue": "={{ $json.route }}",
+              "rightValue": "balance",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b55de278-d7be-441b-a0ba-3848776fe003",
+      "name": "Is Balance?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -500,
+        680
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const route = $json;\nconst amountMatch = route.text.match(/\\d+(\\.\\d+)?/);\nreturn [{\n  json: {\n    amount: amountMatch ? parseFloat(amountMatch[0]) : null,\n    note: route.text,\n    chatId: route.chatId,\n    messageId: route.messageId,\n  }\n}];"
+      },
+      "id": "84c4a971-294f-446c-ac26-860905bbdbc9",
+      "name": "Build Balance Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -280,
+        680
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO balance_snapshots (amount, note, telegram_msg_id) VALUES ($1, $2, $3) RETURNING id",
+        "options": {
+          "queryReplacement": "={{ [ $json.amount, $json.note, $json.messageId ] }}"
+        }
+      },
+      "id": "b41ef228-3e2b-4a6d-906e-20d8466dc22a",
+      "name": "Insert Balance Snapshot",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -60,
+        680
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "syWj4Ccfmwep9ePX",
+          "name": "Budget Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $('Build Balance Input').item.json.chatId }}",
+        "text": "=Got it \u2014 balance set to R{{ $('Build Balance Input').item.json.amount }}.",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "4fefc698-b551-4576-92b4-753c27dd8550",
+      "name": "Confirm Balance Logged",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        160,
+        680
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "6wsBoDN4TWeIFvgr",
+          "name": "Budget Telegram Bot"
+        }
       }
     }
   ],
   "connections": {
-    "Telegram Trigger": { "main": [[{ "node": "Get Pending Income", "type": "main", "index": 0 }]] },
-    "Get Pending Income": { "main": [[{ "node": "Route Message", "type": "main", "index": 0 }]] },
-    "Route Message": { "main": [[{ "node": "Is Income Reply?", "type": "main", "index": 0 }]] },
-    "Is Income Reply?": {
+    "Telegram Trigger": {
       "main": [
-        [{ "node": "Confirm Income", "type": "main", "index": 0 }],
-        [{ "node": "Has Photo?", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Get Pending Income",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
-    "Confirm Income": { "main": [[{ "node": "Confirm Income Reply", "type": "main", "index": 0 }]] },
-    "Confirm Income Reply": { "main": [[{ "node": "Trigger Weekly Budget Calc", "type": "main", "index": 0 }]] },
+    "Get Pending Income": {
+      "main": [
+        [
+          {
+            "node": "Route Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Message": {
+      "main": [
+        [
+          {
+            "node": "Is Income Reply?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Income Reply?": {
+      "main": [
+        [
+          {
+            "node": "Confirm Income",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Has Photo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirm Income": {
+      "main": [
+        [
+          {
+            "node": "Confirm Income Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirm Income Reply": {
+      "main": [
+        [
+          {
+            "node": "Trigger Weekly Budget Calc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Has Photo?": {
       "main": [
-        [{ "node": "Download Receipt File", "type": "main", "index": 0 }],
-        [{ "node": "Is Chat?", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Download Receipt File",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Balance?",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Is Chat?": {
       "main": [
-        [{ "node": "Bridge Chat", "type": "main", "index": 0 }],
-        [{ "node": "Build Classify Input (Text)", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Bridge Chat",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Classify Input (Text)",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
-    "Bridge Chat": { "main": [[{ "node": "Send Chat Reply", "type": "main", "index": 0 }]] },
-    "Download Receipt File": { "main": [[{ "node": "Encode Base64", "type": "main", "index": 0 }]] },
-    "Encode Base64": { "main": [[{ "node": "Bridge OCR", "type": "main", "index": 0 }]] },
-    "Bridge OCR": { "main": [[{ "node": "Build Classify Input (Photo)", "type": "main", "index": 0 }]] },
-    "Build Classify Input (Photo)": { "main": [[{ "node": "Has Amount? (Photo)", "type": "main", "index": 0 }]] },
+    "Bridge Chat": {
+      "main": [
+        [
+          {
+            "node": "Send Chat Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Receipt File": {
+      "main": [
+        [
+          {
+            "node": "Encode Base64",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Encode Base64": {
+      "main": [
+        [
+          {
+            "node": "Bridge OCR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bridge OCR": {
+      "main": [
+        [
+          {
+            "node": "Build Classify Input (Photo)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Classify Input (Photo)": {
+      "main": [
+        [
+          {
+            "node": "Has Amount? (Photo)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Has Amount? (Photo)": {
       "main": [
-        [{ "node": "Bridge Classify (Photo)", "type": "main", "index": 0 }],
-        [{ "node": "Ask Amount (Photo)", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Bridge Classify (Photo)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ask Amount (Photo)",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
-    "Bridge Classify (Photo)": { "main": [[{ "node": "Needs Confirmation? (Photo)", "type": "main", "index": 0 }]] },
+    "Bridge Classify (Photo)": {
+      "main": [
+        [
+          {
+            "node": "Needs Confirmation? (Photo)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Needs Confirmation? (Photo)": {
       "main": [
-        [{ "node": "Insert Transaction (Photo Unsure)", "type": "main", "index": 0 }],
-        [{ "node": "Insert Transaction (Photo Confident)", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Insert Transaction (Photo Unsure)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Insert Transaction (Photo Confident)",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
-    "Insert Transaction (Photo Unsure)": { "main": [[{ "node": "Ask Category (Photo Unsure)", "type": "main", "index": 0 }]] },
-    "Insert Transaction (Photo Confident)": { "main": [[{ "node": "Confirm Logged (Photo Confident)", "type": "main", "index": 0 }]] },
-    "Build Classify Input (Text)": { "main": [[{ "node": "Bridge Classify (Text)", "type": "main", "index": 0 }]] },
-    "Bridge Classify (Text)": { "main": [[{ "node": "Needs Confirmation? (Text)", "type": "main", "index": 0 }]] },
+    "Insert Transaction (Photo Unsure)": {
+      "main": [
+        [
+          {
+            "node": "Ask Category (Photo Unsure)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Transaction (Photo Confident)": {
+      "main": [
+        [
+          {
+            "node": "Confirm Logged (Photo Confident)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Classify Input (Text)": {
+      "main": [
+        [
+          {
+            "node": "Bridge Classify (Text)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bridge Classify (Text)": {
+      "main": [
+        [
+          {
+            "node": "Needs Confirmation? (Text)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Needs Confirmation? (Text)": {
       "main": [
-        [{ "node": "Insert Transaction (Text Unsure)", "type": "main", "index": 0 }],
-        [{ "node": "Insert Transaction (Text Confident)", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Insert Transaction (Text Unsure)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Insert Transaction (Text Confident)",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
-    "Insert Transaction (Text Unsure)": { "main": [[{ "node": "Ask Category (Text Unsure)", "type": "main", "index": 0 }]] },
-    "Insert Transaction (Text Confident)": { "main": [[{ "node": "Confirm Logged (Text Confident)", "type": "main", "index": 0 }]] }
+    "Insert Transaction (Text Unsure)": {
+      "main": [
+        [
+          {
+            "node": "Ask Category (Text Unsure)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Transaction (Text Confident)": {
+      "main": [
+        [
+          {
+            "node": "Confirm Logged (Text Confident)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Balance?": {
+      "main": [
+        [
+          {
+            "node": "Build Balance Input",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Chat?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Balance Input": {
+      "main": [
+        [
+          {
+            "node": "Insert Balance Snapshot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Balance Snapshot": {
+      "main": [
+        [
+          {
+            "node": "Confirm Balance Logged",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
   "active": false,
-  "settings": { "executionOrder": "v1" },
+  "settings": {
+    "executionOrder": "v1"
+  },
   "id": "budget-telegram-intake"
 }

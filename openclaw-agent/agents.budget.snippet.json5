@@ -1,0 +1,36 @@
+// The dedicated "Budget Coach" agent, as it appears in ~/.openclaw/openclaw.json
+// under agents.list[]. This is a SNIPPET for reference/replication — the real
+// openclaw.json also holds the "main" agent and unrelated config, and is NOT in
+// this repo. Add this object to agents.list, then place the budget-workspace/*.md
+// files at the agent's workspace (see openclaw-agent/README.md).
+//
+// Why this shape (each choice was deliberate — see the main README "Issues &
+// gotchas" section for the incidents behind them):
+//   - model.primary is an OpenAI model, NOT google/gemini-*: this deployment has
+//     no working Gemini access, and the first version (gemini-2.5-flash, no
+//     fallback) went silent in production the first time the model was unreachable.
+//   - model.fallbacks is REQUIRED for any non-default agent — a bare primary with
+//     no fallback has nothing to fail over to.
+//   - gpt-5.4-mini (not bare gpt-5.4) keeps the agent off the Codex-runtime path,
+//     so it behaves as a plain chat agent, not a coding harness (which was the
+//     original reason the budget chat "got stuck" under the main agent).
+//   - tools is locked to exec + read: the skills only need to run their Node
+//     scripts (exec) and read files; no write/edit/browser/etc.
+//   - skills replaces (does not merge) the defaults, pinning exactly the two
+//     budget skills to this agent.
+{
+  "id": "budget",
+  "name": "Budget Coach",
+  "identity": {
+    "name": "Budget Coach",
+    "emoji": "💰"
+  },
+  "model": {
+    "primary": "openai/gpt-5.4-mini",
+    "fallbacks": ["openai/gpt-5.4"]
+  },
+  "skills": ["budget-capture", "budget-advisor"],
+  "tools": {
+    "allow": ["exec", "read"]
+  }
+}

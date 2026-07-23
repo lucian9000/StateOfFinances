@@ -1,0 +1,111 @@
+{
+  "name": "Budget - Weekly Advisor Check",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "cronExpression", "expression": "0 8 * * 3" }] }
+      },
+      "id": "b7cd64f6-5e52-479d-b384-8c8e1c18ba73",
+      "name": "Trigger - Wednesday 08:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-1100, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "0f7f7a4e-1111-4a1a-8b1a-000000000001",
+              "name": "pctBudgetUsedThreshold",
+              "value": 80,
+              "type": "number"
+            },
+            {
+              "id": "0f7f7a4e-1111-4a1a-8b1a-000000000002",
+              "name": "pctTimeRemainingThreshold",
+              "value": 20,
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "de1c8a90-43f6-457e-98d0-4f62184f1c11",
+      "name": "Set Thresholds",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "notes": "Tune the proactive-flag thresholds here — no code changes needed. See docs/budget-advisor-thresholds.md for what these mean.",
+      "position": [-880, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT b.week_number, b.weekly_budget, b.weekend_budget, COALESCE((SELECT SUM(amount) FROM transactions WHERE date >= date_trunc('week', CURRENT_DATE)::date AND date <= CURRENT_DATE AND EXTRACT(DOW FROM date) NOT IN (0,6)), 0) AS weekday_spent, COALESCE((SELECT SUM(amount) FROM transactions WHERE date >= date_trunc('week', CURRENT_DATE)::date AND date <= CURRENT_DATE AND EXTRACT(DOW FROM date) IN (0,6)), 0) AS weekend_spent, EXTRACT(ISODOW FROM CURRENT_DATE) AS iso_day_of_week FROM budgets b WHERE b.month = date_trunc('month', CURRENT_DATE)::date AND b.week_number = CEIL(EXTRACT(DAY FROM CURRENT_DATE) / 7.0) LIMIT 1",
+        "options": {}
+      },
+      "id": "22f17ada-7491-4d67-a400-9f7aa8af6ad4",
+      "name": "Get Week Budget vs Spend",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-660, 220],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": { "id": "syWj4Ccfmwep9ePX", "name": "Budget Postgres" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT c.id, c.name, c.type, c.budget_amount, c.period, COALESCE(SUM(t.amount) FILTER (WHERE t.date >= CASE WHEN c.period = 'weekly' THEN date_trunc('week', CURRENT_DATE)::date ELSE date_trunc('month', CURRENT_DATE)::date END AND t.date <= CURRENT_DATE), 0) AS period_spent FROM categories c LEFT JOIN transactions t ON t.category_id = c.id WHERE c.active = true AND c.type = 'recurring_variable' AND c.budget_amount IS NOT NULL AND c.period IS NOT NULL GROUP BY c.id, c.name, c.type, c.budget_amount, c.period",
+        "options": {}
+      },
+      "id": "00c465d1-4f82-45ba-a814-673174d15a24",
+      "name": "Get Category Pace",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-660, 400],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": { "id": "syWj4Ccfmwep9ePX", "name": "Budget Postgres" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const threshold = $('Set Thresholds').first().json;\nconst weekRows = $('Get Week Budget vs Spend').all();\nconst categories = $('Get Category Pace').all().map(i => i.json);\n\nconst flags = [];\n\nif (weekRows.length) {\n  const w = weekRows[0].json;\n  const totalBudget = Number(w.weekly_budget) + Number(w.weekend_budget);\n  const totalSpent = Number(w.weekday_spent) + Number(w.weekend_spent);\n  const pctUsed = totalBudget > 0 ? (totalSpent / totalBudget) * 100 : 0;\n  const pctElapsed = (Number(w.iso_day_of_week) / 7) * 100;\n  const pctRemaining = 100 - pctElapsed;\n  if (totalBudget > 0 && pctUsed >= threshold.pctBudgetUsedThreshold && pctRemaining > threshold.pctTimeRemainingThreshold) {\n    flags.push(`Week ${w.week_number} discretionary pool: R${totalSpent.toFixed(2)} of R${totalBudget.toFixed(2)} used (${pctUsed.toFixed(0)}%) with ${pctRemaining.toFixed(0)}% of the week still to go.`);\n  }\n}\n\nconst today = new Date();\nconst dayOfMonth = today.getDate();\nconst daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();\nconst isoDow = ((today.getDay() + 6) % 7) + 1; // Mon=1..Sun=7\n\nfor (const cat of categories) {\n  const pctElapsed = cat.period === 'weekly' ? (isoDow / 7) * 100 : (dayOfMonth / daysInMonth) * 100;\n  const pctRemaining = 100 - pctElapsed;\n  const budget = Number(cat.budget_amount);\n  const spent = Number(cat.period_spent);\n  const pctUsed = budget > 0 ? (spent / budget) * 100 : 0;\n  if (pctUsed >= threshold.pctBudgetUsedThreshold && pctRemaining > threshold.pctTimeRemainingThreshold) {\n    const periodLabel = cat.period === 'weekly' ? 'week' : 'month';\n    flags.push(`${cat.name} (${cat.period}): R${spent.toFixed(2)} of R${budget.toFixed(2)} used (${pctUsed.toFixed(0)}%) with ${pctRemaining.toFixed(0)}% of the ${periodLabel} still to go.`);\n  }\n}\n\nif (flags.length === 0) {\n  // Return zero items so the downstream Telegram node is skipped entirely.\n  // Deliberately NOT an IF node on a shouldSend flag: in this n8n version an\n  // IF node's empty TRUE branch non-deterministically still fired the Telegram\n  // send with empty text (observed: identical input, run A skipped it, run B\n  // errored). An empty single-output is the reliable 'skip downstream' pattern.\n  return [];\n}\n\nconst message = ['💰 Budget check-in:', '', ...flags.map((f) => `⚠️ ${f}`)].join('\\n');\nreturn [{ json: { message } }];"
+      },
+      "id": "739a3075-cc0f-42f2-9032-033ee1b7985b",
+      "name": "Evaluate Flags",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-440, 300]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "7257153261",
+        "text": "={{ $json.message }}",
+        "additionalFields": { "appendAttribution": false }
+      },
+      "id": "dc20a485-a794-489b-8214-0cb65bef5644",
+      "name": "Send Advisor Flag",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [-220, 300],
+      "credentials": {
+        "telegramApi": { "id": "6wsBoDN4TWeIFvgr", "name": "Budget Telegram Bot" }
+      }
+    }
+  ],
+  "connections": {
+    "Trigger - Wednesday 08:00": { "main": [[{ "node": "Set Thresholds", "type": "main", "index": 0 }]] },
+    "Set Thresholds": { "main": [[{ "node": "Get Week Budget vs Spend", "type": "main", "index": 0 }]] },
+    "Get Week Budget vs Spend": { "main": [[{ "node": "Get Category Pace", "type": "main", "index": 0 }]] },
+    "Get Category Pace": { "main": [[{ "node": "Evaluate Flags", "type": "main", "index": 0 }]] },
+    "Evaluate Flags": { "main": [[{ "node": "Send Advisor Flag", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1", "timezone": "Africa/Johannesburg" },
+  "id": "budget-weekly-advisor-check"
+}

@@ -62,7 +62,7 @@
       "parameters": {
         "resource": "message",
         "operation": "sendMessage",
-        "chatId": "={{ $env.BUDGET_OWNER_CHAT_ID }}",
+        "chatId": "7257153261",
         "text": "=Payday check-in: what ZAR amount landed today for your {{ $json.type }} pay? Just reply with the number (e.g. 9500).",
         "additionalFields": { "appendAttribution": false }
       },

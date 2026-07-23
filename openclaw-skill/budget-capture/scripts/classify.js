@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 // Usage: node classify.js '{"text": "checkers groceries 450"}'
 // Prints a single JSON line to stdout:
-//   {category_id, category_name, confidence: "high"|"low", needs_confirmation, suggested_category_name}
+//   {category_id, category_name, confidence, needs_confirmation,
+//    suggested_category_name, suggested_subcategory: {name, parent_name}|null}
 
 const { execFileSync } = require('child_process');
 const { pool } = require('./db');
 
-const MAX_ACTIVE_CATEGORIES = 15;
+const MAX_ACTIVE_TOP_LEVEL_CATEGORIES = 15;
 
 function extractJson(raw) {
   try { return JSON.parse(raw); } catch (e) { /* fall through */ }
@@ -49,6 +50,25 @@ function keywordMatch(text, categories) {
   return best && best.category;
 }
 
+function buildCategoryTree(categories) {
+  const topLevel = categories.filter((c) => !c.parent_id);
+  const byParent = {};
+  for (const c of categories) {
+    if (c.parent_id) {
+      byParent[c.parent_id] = byParent[c.parent_id] || [];
+      byParent[c.parent_id].push(c);
+    }
+  }
+  const lines = [];
+  for (const top of topLevel) {
+    lines.push(top.name);
+    for (const sub of byParent[top.id] || []) {
+      lines.push(`  - ${sub.name}`);
+    }
+  }
+  return { topLevel, tree: lines.join('\n') };
+}
+
 async function main() {
   const arg = process.argv[2];
   if (!arg) {
@@ -58,7 +78,7 @@ async function main() {
   const { text } = JSON.parse(arg);
 
   const { rows: categories } = await pool.query(
-    'SELECT id, name, keyword_hints FROM categories WHERE active = true ORDER BY id'
+    'SELECT id, name, keyword_hints, parent_id FROM categories WHERE active = true ORDER BY id'
   );
 
   const keywordHit = keywordMatch(text, categories);
@@ -69,23 +89,27 @@ async function main() {
       confidence: 'high',
       needs_confirmation: false,
       suggested_category_name: null,
+      suggested_subcategory: null,
     }));
     await pool.end();
     return;
   }
 
-  const atCap = categories.length >= MAX_ACTIVE_CATEGORIES;
-  const categoryList = categories.map((c) => c.name).join(', ');
-  const prompt = `You are classifying a personal budget transaction into a category.
-Active categories (${categories.length}): ${categoryList}
+  const { topLevel, tree } = buildCategoryTree(categories);
+  const atCap = topLevel.length >= MAX_ACTIVE_TOP_LEVEL_CATEGORIES;
+  const prompt = `You are classifying a personal budget transaction into a category or subcategory.
+Existing categories and subcategories (indented lines are subcategories of the category above them):
+${tree}
+
 Transaction text: "${text}"
 
 ${atCap
-    ? `There are already ${categories.length} active categories (cap is ${MAX_ACTIVE_CATEGORIES}). Do NOT suggest a new category. Pick the closest existing category from the list above.`
-    : `If none of the existing categories are a good fit, you may suggest ONE new short category name (a couple of words, Title Case).`}
+    ? `There are already ${topLevel.length} top-level categories (cap is ${MAX_ACTIVE_TOP_LEVEL_CATEGORIES}). Do NOT suggest a new top-level category — pick the closest existing category or subcategory instead.`
+    : `If nothing existing fits well, you may suggest ONE new top-level category (a couple of words, Title Case).`}
+You may instead suggest a new SUBCATEGORY under an existing top-level category, when that's a better fit than either an existing entry or a whole new top-level category — subcategories are not capped.
 
 Respond with ONLY this JSON, no markdown, no commentary:
-{"best_existing_category": "<exact name from the list, or null>", "new_category_suggestion": ${atCap ? 'null' : '"<new name, or null>"'}}`;
+{"best_existing_category": "<exact name from the list above, or null>", "new_category_suggestion": ${atCap ? 'null' : '"<new top-level name, or null>"'}, "new_subcategory_suggestion": {"name": "<new subcategory name>", "parent_name": "<exact existing top-level category name>"} or null}`;
 
   const modelResult = runModel(prompt);
   const matchedExisting = categories.find(
@@ -93,12 +117,26 @@ Respond with ONLY this JSON, no markdown, no commentary:
       && c.name.toLowerCase() === String(modelResult.best_existing_category).toLowerCase()
   );
 
+  let suggestedSubcategory = null;
+  if (modelResult.new_subcategory_suggestion && modelResult.new_subcategory_suggestion.parent_name) {
+    const parentOk = topLevel.some(
+      (c) => c.name.toLowerCase() === String(modelResult.new_subcategory_suggestion.parent_name).toLowerCase()
+    );
+    if (parentOk && modelResult.new_subcategory_suggestion.name) {
+      suggestedSubcategory = {
+        name: modelResult.new_subcategory_suggestion.name,
+        parent_name: modelResult.new_subcategory_suggestion.parent_name,
+      };
+    }
+  }
+
   console.log(JSON.stringify({
     category_id: matchedExisting ? matchedExisting.id : null,
     category_name: matchedExisting ? matchedExisting.name : null,
     confidence: 'low',
     needs_confirmation: true,
     suggested_category_name: atCap ? null : (modelResult.new_category_suggestion || null),
+    suggested_subcategory: suggestedSubcategory,
   }));
   await pool.end();
 }

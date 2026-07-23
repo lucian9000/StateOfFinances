@@ -110,8 +110,8 @@ const server = http.createServer(async (req, res) => {
         execFile('openclaw', [
           '--log-level', 'silent',
           'agent',
-          '--agent', 'main',
-          '--session-key', `agent:main:budget-telegram-${body.chat_id}`,
+          '--agent', 'budget',
+          '--session-key', `agent:budget:telegram-${body.chat_id}`,
           '--message', String(body.text),
           '--json',
         ], { timeout: 240000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
