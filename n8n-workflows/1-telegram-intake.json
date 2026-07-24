@@ -213,7 +213,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const binary = $binary.data;\nconst b64 = binary.data;\nreturn [{\n  json: {\n    image_base64: b64,\n    filename: binary.fileName || 'receipt.jpg',\n  }\n}];"
+        "jsCode": "// Read the downloaded Telegram file's bytes robustly (works in filesystem\n// binary mode and 'run once for all items' mode, unlike the $binary shortcut).\nconst buffer = await this.helpers.getBinaryDataBuffer(0, 'data');\nconst meta = $input.first().binary.data;\nreturn [{ json: { image_base64: buffer.toString('base64'), filename: (meta && meta.fileName) || 'receipt.jpg' } }];"
       },
       "id": "252748d3-f031-4402-88ba-77fed75b2958",
       "name": "Encode Base64",
