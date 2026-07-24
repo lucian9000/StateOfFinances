@@ -47,7 +47,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const trig = $('Telegram Trigger').item.json;\nconst msg = trig.message || {};\nconst pendingItems = $input.all();\nconst pending = (pendingItems.length && pendingItems[0].json && pendingItems[0].json.id) ? pendingItems[0].json : null;\n\nconst text = (msg.text || '').trim();\nconst hasPhoto = Array.isArray(msg.photo) && msg.photo.length > 0;\nconst numMatch = text.replace(/^[Rr]\\s*/, '').match(/^\\d+(\\.\\d+)?$/);\n// A line only counts as \"reporting an amount\" when the amount is the LAST\n// thing on that line (optionally R-prefixed, optionally one trailing '.').\n// Deliberately stricter than \"contains a digit anywhere\" - a conversational\n// message like \"you added 2 transactions, that's wrong\" contains digits too,\n// but the amount isn't the point of the sentence, and force-routing it to\n// transaction-logging silently created garbage rows (real incident).\nconst amountLinePattern = /\\bR?\\s?\\d+(\\.\\d{1,2})?\\.?\\s*$/i;\nconst anyNumber = text.split('\\n').some((line) => amountLinePattern.test(line.trim()));\nconst isBalance = /\\bbalance\\b/i.test(text);\n\n// chat is the default: anything that isn't an income reply, a photo,\n// a balance statement, or a text ending a line with an amount goes to the\n// OpenClaw agent for a conversational reply instead of being force-parsed\n// as a transaction.\nlet route = 'chat';\nif (pending && numMatch) {\n  route = 'income';\n} else if (hasPhoto) {\n  route = 'photo';\n} else if (isBalance && anyNumber) {\n  route = 'balance';\n} else if (anyNumber) {\n  route = 'text';\n}\n\nreturn [{\n  json: {\n    route,\n    chatId: msg.chat.id,\n    messageId: msg.message_id,\n    text,\n    pendingIncomeId: pending ? pending.id : null,\n    pendingIncomeType: pending ? pending.type : null,\n    incomeAmount: numMatch ? parseFloat(numMatch[0]) : null,\n    photoFileId: hasPhoto ? msg.photo[msg.photo.length - 1].file_id : null,\n  }\n}];"
+        "jsCode": "const trig = $('Telegram Trigger').item.json;\nconst msg = trig.message || {};\nconst pendingItems = $input.all();\nconst pending = (pendingItems.length && pendingItems[0].json && pendingItems[0].json.id) ? pendingItems[0].json : null;\n\nconst text = (msg.text || '').trim();\nconst hasPhoto = Array.isArray(msg.photo) && msg.photo.length > 0;\nconst numMatch = text.replace(/^[Rr]\\s*/, '').match(/^\\d+(\\.\\d+)?$/);\nconst amountLinePattern = /\\bR?\\s?\\d+(\\.\\d{1,2})?\\.?\\s*$/i;\nconst anyNumber = text.split('\\n').some((line) => amountLinePattern.test(line.trim()));\nconst isBalance = /\\bbalance\\b/i.test(text);\n\n// \"income <amount>\" records a POSITIVE income row (available funds), never a spend.\nconst isIncomeAdd = /^\\s*income\\b/i.test(text);\nlet incomeAddAmount = null;\nif (isIncomeAdd) {\n  const m = text.replace(/,/g, '').replace(/^\\s*income\\b/i, '').match(/R?\\s*(\\d+(?:\\.\\d+)?)/i);\n  if (m) incomeAddAmount = parseFloat(m[1]);\n}\n\nlet route = 'chat';\nif (pending && numMatch) {\n  route = 'income';\n} else if (hasPhoto) {\n  route = 'photo';\n} else if (isIncomeAdd && incomeAddAmount != null) {\n  route = 'income_add';\n} else if (isBalance && anyNumber) {\n  route = 'balance';\n} else if (anyNumber) {\n  route = 'text';\n}\n\nreturn [{\n  json: {\n    route,\n    chatId: msg.chat.id,\n    messageId: msg.message_id,\n    text,\n    pendingIncomeId: pending ? pending.id : null,\n    pendingIncomeType: pending ? pending.type : null,\n    incomeAmount: numMatch ? parseFloat(numMatch[0]) : null,\n    incomeAddAmount,\n    photoFileId: hasPhoto ? msg.photo[msg.photo.length - 1].file_id : null,\n  }\n}];"
       },
       "id": "ee91187c-5191-4d5b-9fbc-06a33f71e59c",
       "name": "Route Message",
@@ -119,7 +119,7 @@
         "resource": "message",
         "operation": "sendMessage",
         "chatId": "={{ $('Route Message').item.json.chatId }}",
-        "text": "=Got it \u2014 R{{ $('Route Message').item.json.incomeAmount }} logged for your {{ $('Route Message').item.json.pendingIncomeType }} pay. Recalculating your weekly budget now.",
+        "text": "=Got it — R{{ $('Route Message').item.json.incomeAmount }} logged for your {{ $('Route Message').item.json.pendingIncomeType }} pay. Recalculating your weekly budget now.",
         "additionalFields": {
           "appendAttribution": false
         }
@@ -351,7 +351,7 @@
         "resource": "message",
         "operation": "sendMessage",
         "chatId": "={{ $('Build Classify Input (Photo)').item.json.chatId }}",
-        "text": "=Logged R{{ $('Build Classify Input (Photo)').item.json.amount }} as uncategorized for now \u2014 closest guess: {{ $('Bridge Classify (Photo)').item.json.category_name || $('Bridge Classify (Photo)').item.json.suggested_category_name || 'none' }}. Reply with the right category and I'll remember it for next time.",
+        "text": "=Logged R{{ $('Build Classify Input (Photo)').item.json.amount }} as uncategorized for now — closest guess: {{ $('Bridge Classify (Photo)').item.json.category_name || $('Bridge Classify (Photo)').item.json.suggested_category_name || 'none' }}. Reply with the right category and I'll remember it for next time.",
         "additionalFields": {
           "appendAttribution": false
         }
@@ -422,9 +422,22 @@
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
           "conditions": [
-            { "id": "4007f902-69ff-4153-8660-b1ccf5d23b7e", "leftValue": "={{ $('Bridge Classify (Photo)').item.json.category_id }}", "rightValue": 8, "operator": { "type": "number", "operation": "equals" } }
+            {
+              "id": "4007f902-69ff-4153-8660-b1ccf5d23b7e",
+              "leftValue": "={{ $('Bridge Classify (Photo)').item.json.category_id }}",
+              "rightValue": 8,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
           ],
           "combinator": "and"
         },
@@ -434,7 +447,10 @@
       "name": "Is Groceries? (Photo)",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [1480, 620]
+      "position": [
+        1480,
+        620
+      ]
     },
     {
       "parameters": {
@@ -445,14 +461,24 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ transaction_id: $('Insert Transaction (Photo Confident)').item.json.id, line_items: ($('Bridge OCR').item.json.line_items || []) }) }}",
-        "options": { "timeout": 120000 }
+        "options": {
+          "timeout": 120000
+        }
       },
       "id": "0668c67e-5c1a-458b-ac85-3b383042a7ff",
       "name": "Bridge Reconcile (Photo)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1700, 620],
-      "credentials": { "httpHeaderAuth": { "id": "Eg83ctL4osyXjKdT", "name": "Budget Bridge Token" } }
+      "position": [
+        1700,
+        620
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Eg83ctL4osyXjKdT",
+          "name": "Budget Bridge Token"
+        }
+      }
     },
     {
       "parameters": {
@@ -462,7 +488,10 @@
       "name": "Format Reconcile (Photo)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1920, 620]
+      "position": [
+        1920,
+        620
+      ]
     },
     {
       "parameters": {
@@ -470,14 +499,24 @@
         "operation": "sendMessage",
         "chatId": "={{ $('Build Classify Input (Photo)').item.json.chatId }}",
         "text": "={{ $json.message }}",
-        "additionalFields": { "appendAttribution": false }
+        "additionalFields": {
+          "appendAttribution": false
+        }
       },
       "id": "24ccd63a-43b5-4c74-a269-395d6571e7f3",
       "name": "Send Reconcile Reply (Photo)",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
-      "position": [2140, 620],
-      "credentials": { "telegramApi": { "id": "6wsBoDN4TWeIFvgr", "name": "Budget Telegram Bot" } }
+      "position": [
+        2140,
+        620
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "6wsBoDN4TWeIFvgr",
+          "name": "Budget Telegram Bot"
+        }
+      }
     },
     {
       "parameters": {
@@ -580,7 +619,7 @@
         "resource": "message",
         "operation": "sendMessage",
         "chatId": "={{ $('Build Classify Input (Text)').item.json.chatId }}",
-        "text": "=Logged R{{ $('Build Classify Input (Text)').item.json.amount }} as uncategorized for now \u2014 closest guess: {{ $('Bridge Classify (Text)').item.json.category_name || $('Bridge Classify (Text)').item.json.suggested_category_name || 'none' }}. Reply with the right category and I'll remember it for next time.",
+        "text": "=Logged R{{ $('Build Classify Input (Text)').item.json.amount }} as uncategorized for now — closest guess: {{ $('Bridge Classify (Text)').item.json.category_name || $('Bridge Classify (Text)').item.json.suggested_category_name || 'none' }}. Reply with the right category and I'll remember it for next time.",
         "additionalFields": {
           "appendAttribution": false
         }
@@ -866,7 +905,7 @@
         "resource": "message",
         "operation": "sendMessage",
         "chatId": "={{ $('Build Balance Input').item.json.chatId }}",
-        "text": "=Got it \u2014 balance set to R{{ $('Build Balance Input').item.json.amount }}.",
+        "text": "=Got it — balance set to R{{ $('Build Balance Input').item.json.amount }}.",
         "additionalFields": {
           "appendAttribution": false
         }
@@ -878,6 +917,87 @@
       "position": [
         160,
         680
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "6wsBoDN4TWeIFvgr",
+          "name": "Budget Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a1b2c3d4-0004-4004-8004-000000000004",
+              "leftValue": "={{ $json.route }}",
+              "rightValue": "income_add",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-4001-8001-000000000001",
+      "name": "Is Income Add?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -280,
+        1040
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO income (pay_date, type, confirmed_zar) VALUES (CURRENT_DATE, 'variable', $1) RETURNING id",
+        "options": {
+          "queryReplacement": "={{ [ $('Route Message').item.json.incomeAddAmount ] }}"
+        }
+      },
+      "id": "a1b2c3d4-0002-4002-8002-000000000002",
+      "name": "Insert Income Add",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -60,
+        1040
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "syWj4Ccfmwep9ePX",
+          "name": "Budget Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $('Route Message').item.json.chatId }}",
+        "text": "=✅ Added R{{ $('Route Message').item.json.incomeAddAmount }} to your income (available funds).",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "a1b2c3d4-0003-4003-8003-000000000003",
+      "name": "Confirm Income Add",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        160,
+        1040
       ],
       "credentials": {
         "telegramApi": {
@@ -1233,7 +1353,7 @@
         ],
         [
           {
-            "node": "Is Chat?",
+            "node": "Is Income Add?",
             "type": "main",
             "index": 0
           }
@@ -1256,6 +1376,35 @@
         [
           {
             "node": "Confirm Balance Logged",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Income Add?": {
+      "main": [
+        [
+          {
+            "node": "Insert Income Add",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Chat?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Income Add": {
+      "main": [
+        [
+          {
+            "node": "Confirm Income Add",
             "type": "main",
             "index": 0
           }
